@@ -1,56 +1,26 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
 const PRESETS = [
-  {
-    name: '奶油粉',
-    baseColor: '#f8d4d9',
-    eyeColor: '#262626',
-    tearColor: '#8fd6ff',
-    blushEnabled: true,
-    headwear: 'bow'
-  },
-  {
-    name: '薄荷冰',
-    baseColor: '#ccf1e5',
-    eyeColor: '#1f3a38',
-    tearColor: '#86b9ff',
-    blushEnabled: true,
-    headwear: 'hat'
-  },
-  {
-    name: '葡萄汽水',
-    baseColor: '#e6d5ff',
-    eyeColor: '#2f2148',
-    tearColor: '#9ad8ff',
-    blushEnabled: false,
-    headwear: 'none'
-  },
-  {
-    name: '蜜桃牛奶',
-    baseColor: '#ffe4c9',
-    eyeColor: '#4f3228',
-    tearColor: '#8ac9ff',
-    blushEnabled: true,
-    headwear: 'bow'
-  },
-  {
-    name: '云朵白',
-    baseColor: '#f7f7fb',
-    eyeColor: '#3f4d61',
-    tearColor: '#89cfff',
-    blushEnabled: true,
-    headwear: 'hat'
-  }
+  { name: '经典白', baseColor: '#f7f8f9', eyeColor: '#111111', badgeColor: '#f5b6d8', showBadge: false },
+  { name: '奶油白', baseColor: '#f7f2e8', eyeColor: '#141414', badgeColor: '#f7c6a7', showBadge: false },
+  { name: '樱花粉', baseColor: '#f6d6e2', eyeColor: '#1a1a1a', badgeColor: '#f08ab8', showBadge: true },
+  { name: '天空蓝', baseColor: '#cfe6ff', eyeColor: '#0f2234', badgeColor: '#6ea9ff', showBadge: true },
+  { name: '薄荷绿', baseColor: '#d3f1e5', eyeColor: '#163228', badgeColor: '#78d9b3', showBadge: true },
+  { name: '梦幻紫', baseColor: '#ddd2ff', eyeColor: '#231844', badgeColor: '#ab8eff', showBadge: true },
+  { name: '钛灰', baseColor: '#c8ced4', eyeColor: '#1c1f22', badgeColor: '#8d99a6', showBadge: true },
+  { name: '夜行黑', baseColor: '#1d2127', eyeColor: '#fafafa', badgeColor: '#677288', showBadge: true }
 ];
 
 const state = {
   params: { ...PRESETS[0] },
   currentAction: 'idle',
-  pendingAction: null,
-  transition: 1,
+  targetAction: 'idle',
+  phase: 'action',
   elapsed: 0,
-  blink: 0
+  blink: 1,
+  bodyTurn: 0,
+  neutralBlend: 1
 };
 
 let scene;
@@ -58,398 +28,442 @@ let camera;
 let renderer;
 let controls;
 let clock;
-let crybaby;
-let particleSystem;
+let baymax;
+
+const neutralPose = {
+  shoulderL: { x: 0, y: 0, z: 0.22 },
+  shoulderR: { x: 0, y: 0, z: -0.22 },
+  elbowL: { x: 0, y: 0, z: 0 },
+  elbowR: { x: 0, y: 0, z: 0 },
+  hipL: { x: 0, y: 0, z: 0.06 },
+  hipR: { x: 0, y: 0, z: -0.06 },
+  kneeL: { x: 0, y: 0, z: 0 },
+  kneeR: { x: 0, y: 0, z: 0 },
+  bodyRot: { x: 0, y: 0, z: 0 },
+  headRot: { x: 0, y: 0, z: 0 },
+  rootY: 0,
+  rootYaw: 0
+};
 
 const ui = {
   baseColor: document.getElementById('base-color'),
   eyeColor: document.getElementById('eye-color'),
-  tearColor: document.getElementById('tear-color'),
-  blushEnabled: document.getElementById('blush-enabled'),
-  headwear: document.getElementById('headwear'),
-  bgParticles: document.getElementById('bg-particles'),
+  badgeColor: document.getElementById('badge-color'),
+  showBadge: document.getElementById('show-chest-badge'),
   enableShadows: document.getElementById('enable-shadows'),
   resetView: document.getElementById('reset-view'),
   capture: document.getElementById('capture'),
   presetButtons: document.getElementById('preset-buttons')
 };
 
+function makeBodyMaterial(color) {
+  return new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.52,
+    metalness: 0,
+    clearcoat: 0.18,
+    clearcoatRoughness: 0.64
+  });
+}
+
 function initScene() {
-  const container = document.getElementById('scene-wrap');
   const canvas = document.getElementById('three-canvas');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  const initialW = canvas.clientWidth || container.clientWidth || window.innerWidth;
-  const initialH = canvas.clientHeight || container.clientHeight || window.innerHeight;
-  renderer.setSize(initialW, initialH, false);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.shadowMap.enabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  if (!canvas.parentElement) {
-    container.appendChild(renderer.domElement);
-  }
 
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(42, initialW / initialH, 0.1, 100);
-  camera.position.set(0, 1.8, 4.6);
-  camera.lookAt(0, 1.2, 0);
+  camera = new THREE.PerspectiveCamera(42, canvas.clientWidth / canvas.clientHeight, 0.1, 100);
+  camera.position.set(0, 1.7, 4.3);
+  camera.lookAt(0, 1.05, 0);
 
-  controls = new OrbitControls(camera, canvas);
+  controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.target.set(0, 1.1, 0);
-  controls.minDistance = 2.3;
-  controls.maxDistance = 8;
+  controls.target.set(0, 1.05, 0);
+  controls.minDistance = 2.1;
+  controls.maxDistance = 7.2;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 1.0);
-  scene.add(ambient);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x8393a1, 0.9);
+  scene.add(hemi);
 
-  const keyLight = new THREE.DirectionalLight(0xfff2ef, 1.15);
-  keyLight.position.set(2.2, 3.5, 2.4);
-  keyLight.castShadow = true;
-  keyLight.shadow.mapSize.set(1024, 1024);
-  scene.add(keyLight);
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(2.8, 4.2, 2.2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.left = -4;
+  key.shadow.camera.right = 4;
+  key.shadow.camera.top = 4;
+  key.shadow.camera.bottom = -4;
+  scene.add(key);
 
-  const fillLight = new THREE.DirectionalLight(0xd2ecff, 0.55);
-  fillLight.position.set(-2.2, 2.4, -1.6);
-  scene.add(fillLight);
+  const fill = new THREE.DirectionalLight(0xdde8f4, 0.5);
+  fill.position.set(-3, 2.4, -2.2);
+  scene.add(fill);
 
   const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(3.5, 48),
-    new THREE.MeshStandardMaterial({ color: '#fffafc', roughness: 0.95, metalness: 0.02 })
+    new THREE.CircleGeometry(3.8, 72),
+    new THREE.MeshStandardMaterial({ color: '#d3dde6', roughness: 0.95, metalness: 0 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  particleSystem = createBackgroundParticles();
-  scene.add(particleSystem);
-
-  crybaby = createCrybaby();
-  scene.add(crybaby.root);
+  baymax = createBaymax();
+  scene.add(baymax.root);
 
   clock = new THREE.Clock();
   window.addEventListener('resize', onResize);
 }
 
-function makePlasticMaterial(color) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.42,
-    metalness: 0.08
-  });
-}
-
-function createCrybaby() {
+function createBaymax() {
   const root = new THREE.Group();
+  root.position.y = 0.02;
+
+  const bodyMat = makeBodyMaterial(state.params.baseColor);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: state.params.eyeColor, roughness: 0.2, metalness: 0.05 });
+  const lineMat = new THREE.MeshStandardMaterial({ color: state.params.eyeColor, roughness: 0.25, metalness: 0.05 });
+  const badgeMat = new THREE.MeshStandardMaterial({ color: state.params.badgeColor, roughness: 0.5, metalness: 0.02 });
+
+  const pelvis = new THREE.Group();
+  pelvis.position.y = 0.78;
+  root.add(pelvis);
+
   const bodyGroup = new THREE.Group();
-  const headGroup = new THREE.Group();
-  const armL = new THREE.Group();
-  const armR = new THREE.Group();
-  const legL = new THREE.Group();
-  const legR = new THREE.Group();
+  bodyGroup.position.y = 0.52;
+  pelvis.add(bodyGroup);
 
-  const baseMat = makePlasticMaterial(state.params.baseColor);
-  const eyeMat = new THREE.MeshStandardMaterial({ color: state.params.eyeColor, roughness: 0.2, metalness: 0.12 });
-  const blushMat = new THREE.MeshStandardMaterial({ color: '#ff9ab5', roughness: 0.6, metalness: 0.02, transparent: true, opacity: 0.7 });
-  const tearMat = new THREE.MeshStandardMaterial({
-    color: state.params.tearColor,
-    roughness: 0.1,
-    metalness: 0.05,
-    transparent: true,
-    opacity: 0.75
-  });
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.95, 48, 40), bodyMat);
+  torso.scale.set(1.0, 1.16, 0.92);
+  torso.castShadow = true;
+  torso.receiveShadow = true;
+  bodyGroup.add(torso);
 
-  bodyGroup.position.y = 0.85;
-  root.add(bodyGroup);
-
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.52, 0.65, 10, 20), baseMat);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  bodyGroup.add(body);
-
-  headGroup.position.y = 0.95;
-  bodyGroup.add(headGroup);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.82, 40, 34), baseMat);
-  head.castShadow = true;
-  head.receiveShadow = true;
-  headGroup.add(head);
-
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 22, 22), eyeMat);
-  eyeL.position.set(-0.23, 0.08, 0.67);
-  const eyeR = eyeL.clone();
-  eyeR.position.x = 0.23;
-  headGroup.add(eyeL, eyeR);
-
-  const eyeWhiteL = new THREE.Mesh(new THREE.SphereGeometry(0.033, 14, 14), new THREE.MeshStandardMaterial({ color: '#ffffff' }));
-  eyeWhiteL.position.set(-0.18, 0.13, 0.74);
-  const eyeWhiteR = eyeWhiteL.clone();
-  eyeWhiteR.position.x = 0.28;
-  headGroup.add(eyeWhiteL, eyeWhiteR);
-
-  const blushL = new THREE.Mesh(new THREE.CircleGeometry(0.1, 20), blushMat);
-  blushL.position.set(-0.37, -0.09, 0.64);
-  const blushR = blushL.clone();
-  blushR.position.x = 0.37;
-  headGroup.add(blushL, blushR);
-
-  const mouth = new THREE.Mesh(
-    new THREE.TorusGeometry(0.07, 0.015, 12, 22, Math.PI),
-    new THREE.MeshStandardMaterial({ color: '#8d4a62', roughness: 0.4 })
+  const chestLine = new THREE.Mesh(
+    new THREE.TorusGeometry(0.67, 0.008, 10, 80),
+    new THREE.MeshStandardMaterial({ color: '#d8dce0', roughness: 0.8, metalness: 0 })
   );
-  mouth.rotation.z = Math.PI;
-  mouth.position.set(0, -0.25, 0.66);
-  headGroup.add(mouth);
+  chestLine.rotation.x = Math.PI / 2;
+  chestLine.position.set(0, 0.29, 0);
+  bodyGroup.add(chestLine);
 
-  const tearGeo = new THREE.ConeGeometry(0.07, 0.2, 20, 1);
-  tearGeo.translate(0, -0.1, 0);
-  const tearL = new THREE.Mesh(tearGeo, tearMat);
-  tearL.position.set(-0.23, -0.03, 0.67);
-  tearL.rotation.x = Math.PI;
-  const tearR = tearL.clone();
-  tearR.position.x = 0.23;
-  headGroup.add(tearL, tearR);
+  const badge = new THREE.Mesh(new THREE.CircleGeometry(0.09, 32), badgeMat);
+  badge.position.set(0.28, 0.3, 0.78);
+  badge.visible = state.params.showBadge;
+  bodyGroup.add(badge);
 
-  armL.position.set(-0.55, 0.53, 0);
-  armR.position.set(0.55, 0.53, 0);
-  bodyGroup.add(armL, armR);
+  const headPivot = new THREE.Group();
+  headPivot.position.y = 1.5;
+  pelvis.add(headPivot);
 
-  const armMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.42, 8, 16), baseMat);
-  armMesh.rotation.z = Math.PI / 2;
-  armMesh.position.set(0, -0.22, 0);
-  armMesh.castShadow = true;
-  const armMeshR = armMesh.clone();
-  armL.add(armMesh);
-  armR.add(armMeshR);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 32, 24), bodyMat);
+  head.scale.set(1.26, 0.83, 0.98);
+  head.castShadow = true;
+  headPivot.add(head);
 
-  legL.position.set(-0.22, -0.05, 0);
-  legR.position.set(0.22, -0.05, 0);
-  bodyGroup.add(legL, legR);
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 16), eyeMat);
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-0.11, 0.01, 0.29);
+  eyeR.position.set(0.11, 0.01, 0.29);
+  headPivot.add(eyeL, eyeR);
 
-  const legMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.32, 8, 16), baseMat);
-  legMesh.position.set(0, -0.32, 0.06);
-  legMesh.castShadow = true;
-  const legMeshR = legMesh.clone();
-  legL.add(legMesh);
-  legR.add(legMeshR);
+  const eyeBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.2, 12), lineMat);
+  eyeBridge.rotation.z = Math.PI / 2;
+  eyeBridge.position.set(0, 0.01, 0.29);
+  headPivot.add(eyeBridge);
 
-  const bowGroup = new THREE.Group();
-  const bowMat = new THREE.MeshStandardMaterial({ color: '#ff6ba8', roughness: 0.35, metalness: 0.05 });
-  const bowL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 18, 16), bowMat);
-  bowL.scale.set(1.35, 0.95, 0.8);
-  bowL.position.set(-0.11, 0, 0);
-  const bowR = bowL.clone();
-  bowR.position.x = 0.11;
-  const bowMid = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 14), bowMat);
-  bowGroup.add(bowL, bowR, bowMid);
-  bowGroup.position.set(0, 0.86, 0.15);
-  headGroup.add(bowGroup);
+  const shoulderL = new THREE.Group();
+  const shoulderR = new THREE.Group();
+  shoulderL.position.set(-0.8, 1.22, 0);
+  shoulderR.position.set(0.8, 1.22, 0);
+  pelvis.add(shoulderL, shoulderR);
 
-  const hatGroup = new THREE.Group();
-  const hatMat = new THREE.MeshStandardMaterial({ color: '#8ab3ff', roughness: 0.5, metalness: 0.06 });
-  const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.25, 28), hatMat);
-  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.04, 28), hatMat);
-  hatTop.position.y = 0.08;
-  hatGroup.add(hatTop, hatBrim);
-  hatGroup.position.set(0.22, 0.9, 0.15);
-  headGroup.add(hatGroup);
+  const upperArmGeo = new THREE.CapsuleGeometry(0.16, 0.72, 8, 18);
+  const foreArmGeo = new THREE.CapsuleGeometry(0.14, 0.62, 8, 16);
+
+  const upperArmL = new THREE.Mesh(upperArmGeo, bodyMat);
+  upperArmL.position.y = -0.46;
+  upperArmL.castShadow = true;
+  shoulderL.add(upperArmL);
+
+  const upperArmR = upperArmL.clone();
+  shoulderR.add(upperArmR);
+
+  const elbowL = new THREE.Group();
+  const elbowR = new THREE.Group();
+  elbowL.position.y = -0.9;
+  elbowR.position.y = -0.9;
+  shoulderL.add(elbowL);
+  shoulderR.add(elbowR);
+
+  const foreArmL = new THREE.Mesh(foreArmGeo, bodyMat);
+  foreArmL.position.y = -0.38;
+  foreArmL.castShadow = true;
+  elbowL.add(foreArmL);
+
+  const foreArmR = foreArmL.clone();
+  elbowR.add(foreArmR);
+
+  const handGeo = new THREE.SphereGeometry(0.17, 24, 20);
+  const handL = new THREE.Mesh(handGeo, bodyMat);
+  handL.scale.set(1.05, 0.92, 1.12);
+  handL.position.y = -0.76;
+  handL.castShadow = true;
+  elbowL.add(handL);
+
+  const handR = handL.clone();
+  elbowR.add(handR);
+
+  const hipL = new THREE.Group();
+  const hipR = new THREE.Group();
+  hipL.position.set(-0.36, 0.02, 0);
+  hipR.position.set(0.36, 0.02, 0);
+  pelvis.add(hipL, hipR);
+
+  const thighGeo = new THREE.CapsuleGeometry(0.2, 0.44, 8, 14);
+  const shinGeo = new THREE.CapsuleGeometry(0.18, 0.33, 8, 14);
+
+  const thighL = new THREE.Mesh(thighGeo, bodyMat);
+  thighL.position.y = -0.36;
+  thighL.castShadow = true;
+  hipL.add(thighL);
+
+  const thighR = thighL.clone();
+  hipR.add(thighR);
+
+  const kneeL = new THREE.Group();
+  const kneeR = new THREE.Group();
+  kneeL.position.y = -0.74;
+  kneeR.position.y = -0.74;
+  hipL.add(kneeL, kneeR);
+
+  const shinL = new THREE.Mesh(shinGeo, bodyMat);
+  shinL.position.y = -0.25;
+  shinL.castShadow = true;
+  kneeL.add(shinL);
+
+  const shinR = shinL.clone();
+  kneeR.add(shinR);
+
+  const footGeo = new THREE.SphereGeometry(0.23, 28, 20);
+  const footL = new THREE.Mesh(footGeo, bodyMat);
+  footL.scale.set(1.45, 0.62, 1.7);
+  footL.position.set(0, -0.5, 0.13);
+  footL.castShadow = true;
+  footL.rotation.y = 0.08;
+  kneeL.add(footL);
+
+  const footR = footL.clone();
+  footR.rotation.y = -0.08;
+  kneeR.add(footR);
 
   const heart = createHeartMesh();
   heart.visible = false;
-  heart.position.set(0, 0.33, 0.76);
-  bodyGroup.add(heart);
+  heart.position.set(0, 1.26, 0.9);
+  pelvis.add(heart);
 
   return {
     root,
+    pelvis,
     bodyGroup,
-    headGroup,
-    armL,
-    armR,
-    legL,
-    legR,
-    head,
-    eyes: [eyeL, eyeR],
-    blushes: [blushL, blushR],
-    tears: [tearL, tearR],
-    materials: { baseMat, eyeMat, tearMat },
-    decorations: { bowGroup, hatGroup },
-    heart
+    headPivot,
+    shoulderL,
+    shoulderR,
+    elbowL,
+    elbowR,
+    hipL,
+    hipR,
+    kneeL,
+    kneeR,
+    heart,
+    badge,
+    materials: { bodyMat, eyeMat, lineMat, badgeMat }
   };
 }
 
 function createHeartMesh() {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
-  shape.bezierCurveTo(0, 0.14, -0.22, 0.2, -0.22, 0.02);
-  shape.bezierCurveTo(-0.22, -0.15, 0, -0.23, 0, -0.1);
-  shape.bezierCurveTo(0, -0.23, 0.22, -0.15, 0.22, 0.02);
-  shape.bezierCurveTo(0.22, 0.2, 0, 0.14, 0, 0);
+  shape.bezierCurveTo(0, 0.18, -0.25, 0.22, -0.25, 0.02);
+  shape.bezierCurveTo(-0.25, -0.18, 0, -0.27, 0, -0.12);
+  shape.bezierCurveTo(0, -0.27, 0.25, -0.18, 0.25, 0.02);
+  shape.bezierCurveTo(0.25, 0.22, 0, 0.18, 0, 0);
   const geo = new THREE.ShapeGeometry(shape);
   const mat = new THREE.MeshStandardMaterial({
-    color: '#ff4f96',
-    emissive: '#ff2f7c',
-    emissiveIntensity: 0.65,
+    color: '#ff6fa8',
+    emissive: '#ff4f96',
+    emissiveIntensity: 0.6,
     transparent: true,
     opacity: 0.9,
     side: THREE.DoubleSide
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.scale.set(0.42, 0.42, 0.42);
+  mesh.scale.setScalar(0.42);
   return mesh;
 }
 
-function createBackgroundParticles() {
-  const count = 150;
-  const pos = new Float32Array(count * 3);
-  const color = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    pos[i * 3] = (Math.random() - 0.5) * 7;
-    pos[i * 3 + 1] = Math.random() * 5 - 0.2;
-    pos[i * 3 + 2] = (Math.random() - 0.5) * 7;
-
-    const c = new THREE.Color(i % 2 ? '#ffc5df' : '#bfe8ff');
-    color[i * 3] = c.r;
-    color[i * 3 + 1] = c.g;
-    color[i * 3 + 2] = c.b;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(color, 3));
-
-  const mat = new THREE.PointsMaterial({
-    size: 0.07,
-    transparent: true,
-    opacity: 0.7,
-    vertexColors: true
-  });
-  return new THREE.Points(geo, mat);
-}
-
-function applyParams() {
+function applyParams(syncUI = true) {
   const p = state.params;
-  crybaby.materials.baseMat.color.set(p.baseColor);
-  crybaby.materials.eyeMat.color.set(p.eyeColor);
-  crybaby.materials.tearMat.color.set(p.tearColor);
+  baymax.materials.bodyMat.color.set(p.baseColor);
+  baymax.materials.eyeMat.color.set(p.eyeColor);
+  baymax.materials.lineMat.color.set(p.eyeColor);
+  baymax.materials.badgeMat.color.set(p.badgeColor);
+  baymax.badge.visible = p.showBadge;
 
-  crybaby.blushes.forEach((b) => (b.visible = p.blushEnabled));
-  crybaby.decorations.bowGroup.visible = p.headwear === 'bow';
-  crybaby.decorations.hatGroup.visible = p.headwear === 'hat';
-
-  ui.baseColor.value = p.baseColor;
-  ui.eyeColor.value = p.eyeColor;
-  ui.tearColor.value = p.tearColor;
-  ui.blushEnabled.checked = p.blushEnabled;
-  ui.headwear.value = p.headwear;
+  if (syncUI) {
+    ui.baseColor.value = p.baseColor;
+    ui.eyeColor.value = p.eyeColor;
+    ui.badgeColor.value = p.badgeColor;
+    ui.showBadge.checked = p.showBadge;
+  }
 }
 
-function resetPose(delta) {
-  const parts = [
-    crybaby.headGroup,
-    crybaby.bodyGroup,
-    crybaby.armL,
-    crybaby.armR,
-    crybaby.legL,
-    crybaby.legR
-  ];
-  const snap = 1 - Math.exp(-delta * 10);
-  parts.forEach((part) => {
-    part.rotation.x += (0 - part.rotation.x) * snap;
-    part.rotation.y += (0 - part.rotation.y) * snap;
-    part.rotation.z += (0 - part.rotation.z) * snap;
+function setAction(action) {
+  if (state.targetAction === action) return;
+  state.targetAction = action;
+  state.phase = 'toNeutral';
+  state.neutralBlend = 0;
+}
+
+function damp(current, target, speed, dt) {
+  return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-speed * dt));
+}
+
+function dampRotation(group, target, dt, speed = 10) {
+  group.rotation.x = damp(group.rotation.x, target.x, speed, dt);
+  group.rotation.y = damp(group.rotation.y, target.y, speed, dt);
+  group.rotation.z = damp(group.rotation.z, target.z, speed, dt);
+}
+
+function applyNeutral(dt) {
+  dampRotation(baymax.shoulderL, neutralPose.shoulderL, dt);
+  dampRotation(baymax.shoulderR, neutralPose.shoulderR, dt);
+  dampRotation(baymax.elbowL, neutralPose.elbowL, dt);
+  dampRotation(baymax.elbowR, neutralPose.elbowR, dt);
+  dampRotation(baymax.hipL, neutralPose.hipL, dt);
+  dampRotation(baymax.hipR, neutralPose.hipR, dt);
+  dampRotation(baymax.kneeL, neutralPose.kneeL, dt);
+  dampRotation(baymax.kneeR, neutralPose.kneeR, dt);
+  dampRotation(baymax.bodyGroup, neutralPose.bodyRot, dt, 7);
+  dampRotation(baymax.headPivot, neutralPose.headRot, dt, 7);
+
+  baymax.root.position.y = damp(baymax.root.position.y, neutralPose.rootY, 8, dt);
+  state.bodyTurn = damp(state.bodyTurn, neutralPose.rootYaw, 8, dt);
+  baymax.root.rotation.y = state.bodyTurn;
+
+  const score =
+    Math.abs(baymax.shoulderL.rotation.z - neutralPose.shoulderL.z) +
+    Math.abs(baymax.shoulderR.rotation.z - neutralPose.shoulderR.z) +
+    Math.abs(baymax.bodyGroup.rotation.z) +
+    Math.abs(baymax.headPivot.rotation.x) +
+    Math.abs(baymax.root.rotation.y);
+
+  return score < 0.05;
+}
+
+function runIdle(t, dt) {
+  baymax.root.position.y += Math.sin(t * 2.1) * 0.0008;
+  baymax.bodyGroup.scale.y = 1 + Math.sin(t * 2.1) * 0.015;
+  baymax.bodyGroup.rotation.z += Math.sin(t * 1.3) * 0.0008;
+  baymax.headPivot.rotation.y += Math.sin(t * 0.8) * 0.0012;
+
+  if (Math.sin(t * 2.9) > 0.992) state.blink = 0.2;
+  state.blink = damp(state.blink, 1, 14, dt);
+  const eyeScale = THREE.MathUtils.clamp(state.blink, 0.2, 1);
+  baymax.materials.eyeMat.emissiveIntensity = 0;
+  baymax.headPivot.children.forEach((obj) => {
+    if (obj.geometry && obj.geometry.type === 'SphereGeometry' && obj.material === baymax.materials.eyeMat) {
+      obj.scale.y = eyeScale;
+    }
   });
-
-  crybaby.armL.position.y += (0.53 - crybaby.armL.position.y) * snap;
-  crybaby.armR.position.y += (0.53 - crybaby.armR.position.y) * snap;
-  crybaby.legL.position.x += (-0.22 - crybaby.legL.position.x) * snap;
-  crybaby.legR.position.x += (0.22 - crybaby.legR.position.x) * snap;
-
-  const done =
-    Math.abs(crybaby.headGroup.rotation.y) < 0.01 &&
-    Math.abs(crybaby.armL.rotation.z) < 0.01 &&
-    Math.abs(crybaby.bodyGroup.rotation.z) < 0.01;
-  return done;
 }
 
-function setAction(actionName) {
-  if (state.currentAction === actionName) return;
-  state.pendingAction = actionName;
-  state.transition = 0;
-}
-
-function runIdle(t) {
-  crybaby.bodyGroup.position.y = 0.85 + Math.sin(t * 2) * 0.03;
-  crybaby.bodyGroup.scale.y = 1 + Math.sin(t * 2) * 0.02;
-  crybaby.headGroup.rotation.x += Math.sin(t * 1.2) * 0.0018;
-
-  const blinkWave = Math.sin(t * 2.6);
-  if (blinkWave > 0.987) state.blink = 0.1;
-  state.blink += (1 - state.blink) * 0.35;
-  crybaby.eyes.forEach((eye) => {
-    eye.scale.y = THREE.MathUtils.clamp(state.blink, 0.1, 1);
-  });
+function runWave(t) {
+  baymax.shoulderR.rotation.x = -1.2;
+  baymax.shoulderR.rotation.z = -0.45;
+  baymax.elbowR.rotation.x = -0.58;
+  baymax.elbowR.rotation.y = Math.sin(t * 5.5) * 0.45;
+  baymax.headPivot.rotation.y = Math.sin(t * 2.6) * 0.08;
 }
 
 function runHeart(t) {
-  const armSwing = Math.sin(t * 6) * 0.03;
-  crybaby.armL.rotation.z = -1.05 + armSwing;
-  crybaby.armR.rotation.z = 1.05 - armSwing;
-  crybaby.armL.rotation.x = -0.5;
-  crybaby.armR.rotation.x = -0.5;
-  crybaby.armL.position.y = 0.62;
-  crybaby.armR.position.y = 0.62;
-  crybaby.heart.visible = true;
-  const pulse = 1 + Math.sin(t * 6) * 0.12;
-  crybaby.heart.scale.setScalar(0.42 * pulse);
-  crybaby.heart.material.opacity = 0.75 + Math.sin(t * 6) * 0.1;
+  baymax.shoulderL.rotation.x = -0.9;
+  baymax.shoulderR.rotation.x = -0.9;
+  baymax.shoulderL.rotation.z = 0.2;
+  baymax.shoulderR.rotation.z = -0.2;
+  baymax.elbowL.rotation.x = -1.15;
+  baymax.elbowR.rotation.x = -1.15;
+  baymax.elbowL.rotation.y = 0.24;
+  baymax.elbowR.rotation.y = -0.24;
+  baymax.heart.visible = true;
+  const pulse = 1 + Math.sin(t * 6) * 0.13;
+  baymax.heart.scale.setScalar(0.42 * pulse);
+  baymax.heart.material.opacity = 0.62 + 0.25 * (Math.sin(t * 6) * 0.5 + 0.5);
 }
 
 function runDance(t) {
-  crybaby.bodyGroup.rotation.z = Math.sin(t * 2.2) * 0.22;
-  crybaby.headGroup.rotation.y = Math.sin(t * 2.2) * 0.28;
-  crybaby.headGroup.rotation.x = Math.cos(t * 3.1) * 0.13;
-  crybaby.armL.rotation.z = -0.6 + Math.sin(t * 4.4) * 0.5;
-  crybaby.armR.rotation.z = 0.6 - Math.sin(t * 4.4 + 0.8) * 0.5;
-  crybaby.legL.position.x = -0.22 + Math.sin(t * 3.2) * 0.08;
-  crybaby.legR.position.x = 0.22 + Math.sin(t * 3.2 + Math.PI) * 0.08;
+  baymax.bodyGroup.rotation.z = Math.sin(t * 2.1) * 0.2;
+  baymax.headPivot.rotation.y = Math.sin(t * 2.1) * 0.25;
+  baymax.shoulderL.rotation.z = 0.5 + Math.sin(t * 4.2) * 0.55;
+  baymax.shoulderR.rotation.z = -0.5 - Math.sin(t * 4.2 + 1) * 0.55;
+  baymax.hipL.rotation.x = Math.sin(t * 3) * 0.22;
+  baymax.hipR.rotation.x = Math.sin(t * 3 + Math.PI) * 0.22;
+  baymax.root.position.y = 0.02 + Math.abs(Math.sin(t * 3.1)) * 0.06;
 }
 
-function runCry(t) {
-  crybaby.headGroup.rotation.y = Math.sin(t * 20) * 0.14;
-  crybaby.headGroup.rotation.x = Math.sin(t * 12) * 0.08;
-  crybaby.bodyGroup.scale.y = 1 + Math.sin(t * 11) * 0.04;
-  crybaby.armL.rotation.z = -0.25 + Math.sin(t * 14) * 0.15;
-  crybaby.armR.rotation.z = 0.25 - Math.sin(t * 14) * 0.15;
+function runSpin(t) {
+  state.bodyTurn = (t * 0.85) % (Math.PI * 2);
+  baymax.root.rotation.y = state.bodyTurn;
+  baymax.headPivot.rotation.y = Math.sin(t * 1.2) * 0.12;
+}
 
-  crybaby.tears.forEach((tear, i) => {
-    const phase = t * 8 + i * 0.6;
-    tear.position.y = -0.03 - Math.abs(Math.sin(phase)) * 0.17;
-    tear.material.opacity = 0.45 + Math.abs(Math.sin(phase)) * 0.4;
-  });
+function runHug() {
+  baymax.shoulderL.rotation.x = -0.85;
+  baymax.shoulderR.rotation.x = -0.85;
+  baymax.shoulderL.rotation.z = 0.38;
+  baymax.shoulderR.rotation.z = -0.38;
+  baymax.elbowL.rotation.x = -0.95;
+  baymax.elbowR.rotation.x = -0.95;
+  baymax.bodyGroup.rotation.x = 0.12;
+  baymax.headPivot.rotation.x = -0.08;
+}
+
+function runComfort(t) {
+  baymax.headPivot.rotation.x = Math.sin(t * 3.1) * 0.18;
+  baymax.shoulderR.rotation.x = -0.72;
+  baymax.elbowR.rotation.x = -1.0 + Math.sin(t * 3.1) * 0.2;
+  baymax.shoulderL.rotation.z = 0.18;
+  baymax.bodyGroup.rotation.z = Math.sin(t * 3.1) * 0.04;
 }
 
 function animateLoop() {
-  const delta = clock.getDelta();
-  state.elapsed += delta;
+  const dt = clock.getDelta();
+  state.elapsed += dt;
+  const t = state.elapsed;
 
   controls.update();
-  runIdle(state.elapsed);
+  runIdle(t, dt);
 
-  if (state.transition < 1) {
-    const ready = resetPose(delta);
-    state.transition += delta * 2.2;
-    if (ready && state.transition > 0.95) {
-      state.currentAction = state.pendingAction || 'idle';
-      state.pendingAction = null;
+  if (state.phase === 'toNeutral') {
+    const done = applyNeutral(dt);
+    if (done) {
+      state.currentAction = state.targetAction;
+      state.phase = 'action';
     }
   }
 
-  if (state.currentAction === 'heart') runHeart(state.elapsed);
-  if (state.currentAction === 'dance') runDance(state.elapsed);
-  if (state.currentAction === 'cry') runCry(state.elapsed);
-  if (state.currentAction !== 'heart') crybaby.heart.visible = false;
+  baymax.heart.visible = false;
 
-  if (particleSystem.visible) {
-    particleSystem.rotation.y += delta * 0.08;
+  if (state.phase === 'action') {
+    if (state.currentAction === 'wave') runWave(t);
+    if (state.currentAction === 'heart') runHeart(t);
+    if (state.currentAction === 'dance') runDance(t);
+    if (state.currentAction === 'spin') runSpin(t);
+    if (state.currentAction === 'hug') runHug();
+    if (state.currentAction === 'comfort') runComfort(t);
+    if (state.currentAction === 'idle') applyNeutral(dt);
   }
 
   renderer.render(scene, camera);
@@ -458,71 +472,60 @@ function animateLoop() {
 
 function captureScreenshot() {
   renderer.render(scene, camera);
-  const link = document.createElement('a');
-  link.href = renderer.domElement.toDataURL('image/png');
-  link.download = `crybaby-${Date.now()}.png`;
-  link.click();
+  const a = document.createElement('a');
+  a.href = renderer.domElement.toDataURL('image/png');
+  a.download = `baymax-${Date.now()}.png`;
+  a.click();
 }
 
 function onResize() {
-  const canvas = renderer.domElement;
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
+  const w = renderer.domElement.clientWidth;
+  const h = renderer.domElement.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
 
 function bindUI() {
-  PRESETS.forEach((preset, idx) => {
+  PRESETS.forEach((preset) => {
     const btn = document.createElement('button');
     btn.textContent = preset.name;
     btn.addEventListener('click', () => {
       state.params = { ...preset };
-      applyParams();
+      applyParams(true);
     });
-    if (idx === 0) btn.classList.add('active');
     ui.presetButtons.appendChild(btn);
   });
 
   ui.baseColor.addEventListener('input', (e) => {
     state.params.baseColor = e.target.value;
-    applyParams();
+    applyParams(false);
   });
   ui.eyeColor.addEventListener('input', (e) => {
     state.params.eyeColor = e.target.value;
-    applyParams();
+    applyParams(false);
   });
-  ui.tearColor.addEventListener('input', (e) => {
-    state.params.tearColor = e.target.value;
-    applyParams();
+  ui.badgeColor.addEventListener('input', (e) => {
+    state.params.badgeColor = e.target.value;
+    applyParams(false);
   });
-  ui.blushEnabled.addEventListener('change', (e) => {
-    state.params.blushEnabled = e.target.checked;
-    applyParams();
-  });
-  ui.headwear.addEventListener('change', (e) => {
-    state.params.headwear = e.target.value;
-    applyParams();
-  });
-
-  ui.bgParticles.addEventListener('change', (e) => {
-    particleSystem.visible = e.target.checked;
+  ui.showBadge.addEventListener('change', (e) => {
+    state.params.showBadge = e.target.checked;
+    applyParams(false);
   });
 
   ui.enableShadows.addEventListener('change', (e) => {
     renderer.shadowMap.enabled = e.target.checked;
-    crybaby.root.traverse((obj) => {
+    scene.traverse((obj) => {
       if (obj.isMesh) {
         obj.castShadow = e.target.checked;
-        obj.receiveShadow = e.target.checked;
       }
     });
   });
 
   ui.resetView.addEventListener('click', () => {
-    camera.position.set(0, 1.8, 4.6);
-    controls.target.set(0, 1.1, 0);
+    camera.position.set(0, 1.7, 4.3);
+    controls.target.set(0, 1.05, 0);
     controls.update();
   });
 
@@ -535,5 +538,5 @@ function bindUI() {
 
 initScene();
 bindUI();
-applyParams();
+applyParams(true);
 animateLoop();

@@ -3,65 +3,50 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Crybaby 3D 动画生成器</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ctext y=%2750%27 font-size=%2748%27%3E%F0%9F%98%AD%3C/text%3E%3C/svg%3E" />
+    <title>Baymax（大白）3D 动画生成器</title>
     <link rel="stylesheet" href="./style.css" />
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-      }
-    </script>
   </head>
   <body>
     <div class="app">
       <section class="canvas-panel">
         <div id="scene-wrap">
-          <canvas id="three-canvas" aria-label="Crybaby 3D 画布"></canvas>
+          <canvas id="three-canvas" aria-label="Baymax 3D 画布"></canvas>
           <div class="hint">拖拽旋转 · 滚轮/双指缩放</div>
         </div>
       </section>
 
       <aside class="control-panel">
-        <h1>Crybaby（哭娃）3D 动画生成器</h1>
+        <h1>Baymax（大白）3D 动画生成器</h1>
 
         <div class="group presets-group">
-          <h2>预设</h2>
+          <h2>预设配色</h2>
           <div class="preset-grid" id="preset-buttons"></div>
         </div>
 
         <div class="group">
-          <h2>网格 / 显示</h2>
-          <label><input type="checkbox" id="bg-particles" checked /> 背景粒子</label>
+          <h2>显示</h2>
           <label><input type="checkbox" id="enable-shadows" checked /> 阴影</label>
+          <label><input type="checkbox" id="show-chest-badge" /> 胸前标识</label>
           <button id="reset-view">重置视角</button>
         </div>
 
         <div class="group">
           <h2>外观</h2>
-          <label>主体颜色 <input type="color" id="base-color" value="#f8d4d9" /></label>
-          <label>眼睛颜色 <input type="color" id="eye-color" value="#252525" /></label>
-          <label>泪滴颜色 <input type="color" id="tear-color" value="#7ec8ff" /></label>
-          <label><input type="checkbox" id="blush-enabled" checked /> 腮红</label>
-          <label>
-            头饰
-            <select id="headwear">
-              <option value="none">无</option>
-              <option value="bow">蝴蝶结</option>
-              <option value="hat">小帽子</option>
-            </select>
-          </label>
+          <label>主体颜色 <input type="color" id="base-color" value="#f7f8f9" /></label>
+          <label>眼睛颜色 <input type="color" id="eye-color" value="#111111" /></label>
+          <label>胸前标识颜色 <input type="color" id="badge-color" value="#f5b6d8" /></label>
         </div>
 
         <div class="group action-group">
           <h2>动作</h2>
           <div class="action-grid">
+            <button data-action="wave">挥手</button>
             <button data-action="heart">比心</button>
             <button data-action="dance">跳舞</button>
-            <button data-action="cry">哭哭</button>
-            <button data-action="idle">停止 / 回待机</button>
+            <button data-action="spin">旋转展示</button>
+            <button data-action="hug">抱抱</button>
+            <button data-action="comfort">点头安慰</button>
+            <button data-action="idle" class="stop-btn">停止 / 回待机</button>
           </div>
         </div>
 
