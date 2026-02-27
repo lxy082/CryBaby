@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baymax（大白）3D 动画生成器</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23e9eef3'/%3E%3Ccircle cx='22' cy='30' r='4' fill='%23111'/%3E%3Ccircle cx='42' cy='30' r='4' fill='%23111'/%3E%3Crect x='22' y='29' width='20' height='2' fill='%23111'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app">
+      <section class="canvas-panel">
+        <div id="scene-wrap">
+          <canvas id="three-canvas" aria-label="Baymax 3D 画布"></canvas>
+          <div class="hint">拖拽旋转 · 滚轮/双指缩放</div>
+        </div>
+      </section>
+
+      <aside class="control-panel">
+        <h1>Baymax（大白）3D 动画生成器</h1>
+
+        <div class="group presets-group">
+          <h2>预设配色</h2>
+          <div class="preset-grid" id="preset-buttons"></div>
+        </div>
+
+        <div class="group">
+          <h2>显示</h2>
+          <label><input type="checkbox" id="enable-shadows" checked /> 阴影</label>
+          <label><input type="checkbox" id="show-chest-badge" /> 胸前标识</label>
+          <button id="reset-view">重置视角</button>
+        </div>
+
+        <div class="group">
+          <h2>外观</h2>
+          <label>主体颜色 <input type="color" id="base-color" value="#f7f8f9" /></label>
+          <label>眼睛颜色 <input type="color" id="eye-color" value="#111111" /></label>
+          <label>胸前标识颜色 <input type="color" id="badge-color" value="#f5b6d8" /></label>
+        </div>
+
+        <div class="group action-group">
+          <h2>动作</h2>
+          <div class="action-grid">
+            <button data-action="wave">挥手</button>
+            <button data-action="heart">比心</button>
+            <button data-action="dance">跳舞</button>
+            <button data-action="spin">旋转展示</button>
+            <button data-action="hug">抱抱</button>
+            <button data-action="comfort">点头安慰</button>
+            <button data-action="idle" class="stop-btn">停止 / 回待机</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>工具</h2>
+          <button id="capture">截图保存 PNG</button>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
