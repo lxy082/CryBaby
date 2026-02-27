@@ -28,15 +28,35 @@ python -m http.server 8000
 4. Branch 选择 `main`，Folder 选择 `/ (root)`。
 5. 保存后等待页面发布。
 
+## 报错排查（含本项目已修复项）
+
+### 报错 1（核心致命）
+
+```text
+Uncaught TypeError: Failed to resolve module specifier "three". Relative references must start with either "/", "./", or "../".  (index):1
+```
+
+处理方式：
+- 确保入口仅为 `<script type="module" src="./main.js"></script>`。
+- 使用 CDN ESM 导入（本项目使用 jsDelivr `three@0.160.0`）。
+- 全局搜索并清理裸导入：`from "three"`、`from "three/..."`。
+- 若引用 examples 模块（例如 OrbitControls）且其内部依赖 `three`，确保 importmap 在 module script 前声明。
+
+### 报错 2（非致命）
+
+```text
+Failed to load resource: the server responded with a status of 404 () /favicon.ico
+```
+
+处理方式：
+- 在 `index.html` 添加存在的 favicon 路径。
+- 本项目使用内联 data URL favicon，避免 404。
+
 ## 常见问题
 
-1. **控制台报错 `Failed to resolve module specifier 'three'`**
-   - 说明代码里仍有裸导入（`from "three"`）。
-   - 请全局搜索 `from "three"` 与 `from "three/..."`，统一替换为 CDN URL 导入。
-
-2. **手机端无法旋转/缩放**
+1. **手机端无法旋转/缩放**
    - 请通过 `http://` 访问，不要直接用 `file://` 打开。
    - 确认浏览器未禁用手势，OrbitControls 已支持单指旋转与双指缩放。
 
-3. **截图没有下载**
+2. **截图没有下载**
    - 某些移动端浏览器会拦截自动下载，请改用桌面浏览器或检查下载权限。

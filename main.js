@@ -1,5 +1,8 @@
+console.log("[boot] main.js loaded");
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+console.log('[boot] THREE version:', THREE.REVISION);
 
 const PRESETS = [
   { name: '经典白', baseColor: '#f7f8f9', eyeColor: '#111111', badgeColor: '#f5b6d8', showBadge: false },
@@ -67,15 +70,21 @@ function makeBodyMaterial(color) {
 }
 
 function initScene() {
+  const container = document.getElementById('scene-wrap');
   const canvas = document.getElementById('three-canvas');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+  const width = canvas.clientWidth || container.clientWidth || window.innerWidth;
+  const height = canvas.clientHeight || container.clientHeight || window.innerHeight;
+  renderer.setSize(width, height, false);
+  if (!renderer.domElement.parentElement) {
+    container.appendChild(renderer.domElement);
+  }
   renderer.shadowMap.enabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(42, canvas.clientWidth / canvas.clientHeight, 0.1, 100);
+  camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
   camera.position.set(0, 1.7, 4.3);
   camera.lookAt(0, 1.05, 0);
 
@@ -110,6 +119,14 @@ function initScene() {
   floor.position.y = -0.02;
   floor.receiveShadow = true;
   scene.add(floor);
+
+  const debugCube = new THREE.Mesh(
+    new THREE.BoxGeometry(0.32, 0.32, 0.32),
+    new THREE.MeshStandardMaterial({ color: '#45d46a' })
+  );
+  debugCube.position.set(-1.3, 0.45, 0.2);
+  debugCube.castShadow = true;
+  scene.add(debugCube);
 
   baymax = createBaymax();
   scene.add(baymax.root);
@@ -479,8 +496,9 @@ function captureScreenshot() {
 }
 
 function onResize() {
-  const w = renderer.domElement.clientWidth;
-  const h = renderer.domElement.clientHeight;
+  const container = document.getElementById('scene-wrap');
+  const w = renderer.domElement.clientWidth || container.clientWidth || window.innerWidth;
+  const h = renderer.domElement.clientHeight || container.clientHeight || window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
