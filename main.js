@@ -15,23 +15,6 @@ const PRESETS = [
   { name: '夜行黑', baseColor: '#1d2127', eyeColor: '#fafafa', badgeColor: '#677288', showBadge: true }
 ];
 
-const state = {
-  params: { ...PRESETS[0] },
-  currentAction: 'idle',
-  targetAction: 'idle',
-  phase: 'action',
-  elapsed: 0,
-  blink: 1,
-  bodyTurn: 0
-};
-
-let scene;
-let camera;
-let renderer;
-let controls;
-let clock;
-let baymax;
-
 const ui = {
   baseColor: document.getElementById('base-color'),
   eyeColor: document.getElementById('eye-color'),
@@ -43,75 +26,104 @@ const ui = {
   presetButtons: document.getElementById('preset-buttons')
 };
 
-const neutralPose = {
-  shoulderL: { x: 0.1, y: -0.08, z: 0.26 },
-  shoulderR: { x: 0.1, y: 0.08, z: -0.26 },
-  elbowL: { x: 0.17 },
-  elbowR: { x: 0.17 },
-  hipL: { x: 0.05, y: 0, z: 0.08 },
-  hipR: { x: 0.05, y: 0, z: -0.08 },
-  kneeL: { x: -0.12 },
-  kneeR: { x: -0.12 },
-  body: { x: 0, y: 0, z: 0 },
-  head: { x: 0, y: 0, z: 0 },
-  rootY: 0,
+const state = {
+  params: { ...PRESETS[0] },
+  elapsed: 0,
+  currentAction: 'idle',
+  fromAction: 'idle',
+  actionStartAt: 0,
+  fromActionStartAt: 0,
+  transition: 1,
+  transitionDuration: 0.62,
+  blink: 1,
   rootYaw: 0
 };
 
-const torsoCollider = {
-  center: new THREE.Vector3(0, 1.36, 0.03),
-  radii: new THREE.Vector3(0.92, 1.08, 0.8)
+const poseNeutral = {
+  body: { x: 0, y: 0, z: 0 },
+  head: { x: 0, y: 0, z: 0 },
+  shoulderL: { x: 0.1, y: -0.08, z: 0.22 },
+  shoulderR: { x: 0.1, y: 0.08, z: -0.22 },
+  elbowL: { x: 0.16 },
+  elbowR: { x: 0.16 },
+  legL: { x: 0.04, y: 0, z: 0.04 },
+  legR: { x: 0.04, y: 0, z: -0.04 },
+  rootY: 0,
+  rootYaw: 0,
+  showHeart: false,
+  showFlower: false
 };
 
 const armMeta = {
-  L: { shoulderPos: new THREE.Vector3(-0.95, 1.62, 0.08), sideSign: -1, outMin: 0.08, yawMin: -1.05, yawMax: 0.24 },
-  R: { shoulderPos: new THREE.Vector3(0.95, 1.62, 0.08), sideSign: 1, outMin: -0.08, yawMin: -0.24, yawMax: 1.05 }
+  L: { shoulderPos: new THREE.Vector3(-0.94, 1.63, 0.08), yaw: [-1.2, 0.28], roll: [0.05, 1.3], pitch: [-1.45, 0.95] },
+  R: { shoulderPos: new THREE.Vector3(0.94, 1.63, 0.08), yaw: [-0.28, 1.2], roll: [-1.3, -0.05], pitch: [-1.45, 0.95] }
 };
 
-function clampAngle(v, min, max) {
+const torsoCollider = {
+  center: new THREE.Vector3(0, 1.35, 0.03),
+  radii: new THREE.Vector3(0.93, 1.12, 0.81)
+};
+
+let scene;
+let camera;
+let renderer;
+let controls;
+let clock;
+let baymax;
+
+function clonePose(base) {
+  return JSON.parse(JSON.stringify(base));
+}
+
+function clamp(v, min, max) {
   return THREE.MathUtils.clamp(v, min, max);
+}
+
+function mix(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function smoothstep01(t) {
+  return t * t * (3 - 2 * t);
 }
 
 function makeBodyMaterial(color) {
   return new THREE.MeshPhysicalMaterial({
     color,
-    roughness: 0.64,
+    roughness: 0.66,
     metalness: 0,
-    clearcoat: 0.34,
-    clearcoatRoughness: 0.64
+    clearcoat: 0.38,
+    clearcoatRoughness: 0.63
   });
 }
 
 function initScene() {
   const container = document.getElementById('scene-wrap');
   const canvas = document.getElementById('three-canvas');
-
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  const width = canvas.clientWidth || container.clientWidth || window.innerWidth;
-  const height = canvas.clientHeight || container.clientHeight || window.innerHeight;
-  renderer.setSize(width, height, false);
+  const w = canvas.clientWidth || container.clientWidth || window.innerWidth;
+  const h = canvas.clientHeight || container.clientHeight || window.innerHeight;
+  renderer.setSize(w, h, false);
   renderer.shadowMap.enabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   if (!renderer.domElement.parentElement) container.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
-
-  camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
-  camera.position.set(0, 1.9, 4.6);
+  camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
+  camera.position.set(0, 1.95, 4.7);
   camera.lookAt(0, 1.25, 0);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.target.set(0, 1.25, 0);
-  controls.minDistance = 2.2;
-  controls.maxDistance = 7.6;
+  controls.minDistance = 2.25;
+  controls.maxDistance = 7.5;
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x95a7b8, 0.86);
-  scene.add(hemi);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x95a7b8, 0.9));
 
-  const key = new THREE.DirectionalLight(0xffffff, 1.18);
-  key.position.set(2.8, 4.5, 2.4);
+  const key = new THREE.DirectionalLight(0xffffff, 1.2);
+  key.position.set(2.8, 4.5, 2.6);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.left = -5;
@@ -120,8 +132,8 @@ function initScene() {
   key.shadow.camera.bottom = -5;
   scene.add(key);
 
-  const fill = new THREE.DirectionalLight(0xdce9f8, 0.46);
-  fill.position.set(-3.4, 2.4, -2.4);
+  const fill = new THREE.DirectionalLight(0xddebf7, 0.42);
+  fill.position.set(-3.2, 2.6, -2.3);
   scene.add(fill);
 
   const floor = new THREE.Mesh(
@@ -142,7 +154,6 @@ function initScene() {
 
 function createBaymax() {
   const root = new THREE.Group();
-
   const bodyMat = makeBodyMaterial(state.params.baseColor);
   const eyeMat = new THREE.MeshBasicMaterial({ color: state.params.eyeColor });
   const badgeMat = new THREE.MeshStandardMaterial({ color: state.params.badgeColor, roughness: 0.5, metalness: 0.02 });
@@ -152,7 +163,7 @@ function createBaymax() {
   root.add(pelvis);
 
   const bodyGroup = new THREE.Group();
-  bodyGroup.position.y = 0.5;
+  bodyGroup.position.y = 0.52;
   pelvis.add(bodyGroup);
 
   const torso = new THREE.Mesh(new THREE.SphereGeometry(1, 56, 46), bodyMat);
@@ -174,136 +185,128 @@ function createBaymax() {
   badge.visible = state.params.showBadge;
   bodyGroup.add(badge);
 
-  const headPivot = new THREE.Group();
-  headPivot.position.y = 1.58;
-  pelvis.add(headPivot);
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 1.58;
+  pelvis.add(headGroup);
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 36, 26), bodyMat);
   head.scale.set(1.28, 0.82, 0.98);
   head.castShadow = true;
-  headPivot.add(head);
+  headGroup.add(head);
 
-  const eyeSpacing = 0.112;
-  const eyeZ = 0.305;
+  // 脸部：两个黑点 + 细线，绑定 headGroup，随头旋转
   const eyeY = 0.02;
+  const eyeZ = 0.308;
+  const eyeGap = 0.112;
   const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 16), eyeMat);
   const eyeR = eyeL.clone();
-  eyeL.position.set(-eyeSpacing, eyeY, eyeZ);
-  eyeR.position.set(eyeSpacing, eyeY, eyeZ);
-  headPivot.add(eyeL, eyeR);
+  eyeL.position.set(-eyeGap, eyeY, eyeZ);
+  eyeR.position.set(eyeGap, eyeY, eyeZ);
+  const eyeLine = new THREE.Mesh(new THREE.CylinderGeometry(0.0048, 0.0048, eyeGap * 2, 10), eyeMat);
+  eyeLine.rotation.z = Math.PI / 2;
+  eyeLine.position.set(0, eyeY, eyeZ + 0.003);
+  headGroup.add(eyeL, eyeR, eyeLine);
 
-  const eyeBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, eyeSpacing * 2, 10), eyeMat);
-  eyeBridge.rotation.z = Math.PI / 2;
-  eyeBridge.position.set(0, eyeY, eyeZ + 0.002);
-  headPivot.add(eyeBridge);
-
-  // 1) 手臂枢轴与 neutral pose 设置：肩枢轴贴体外侧略前，前臂与手掌按层级挂接
+  // 形体改动：手臂变长（upper+forearm 合计约 +20%），肩枢轴略外略前
   const shoulderL = new THREE.Group();
   const shoulderR = new THREE.Group();
   shoulderL.position.copy(armMeta.L.shoulderPos);
   shoulderR.position.copy(armMeta.R.shoulderPos);
   pelvis.add(shoulderL, shoulderR);
 
-  const upperArmGeo = new THREE.CapsuleGeometry(0.13, 0.66, 9, 18);
-  const foreArmGeo = new THREE.CapsuleGeometry(0.115, 0.58, 9, 18);
+  const upperLen = 0.82;
+  const foreLen = 0.8;
+  const upperArmGeo = new THREE.CapsuleGeometry(0.118, upperLen, 9, 18);
+  const foreArmGeo = new THREE.CapsuleGeometry(0.108, foreLen, 9, 18);
 
   const upperArmL = new THREE.Mesh(upperArmGeo, bodyMat);
-  upperArmL.position.y = -0.44;
+  upperArmL.position.y = -(upperLen * 0.5 + 0.08);
   upperArmL.castShadow = true;
   shoulderL.add(upperArmL);
-
   const upperArmR = upperArmL.clone();
   shoulderR.add(upperArmR);
 
   const elbowL = new THREE.Group();
   const elbowR = new THREE.Group();
-  elbowL.position.y = -0.86;
-  elbowR.position.y = -0.86;
+  elbowL.position.y = -(upperLen + 0.16);
+  elbowR.position.y = -(upperLen + 0.16);
   shoulderL.add(elbowL);
   shoulderR.add(elbowR);
 
   const foreArmL = new THREE.Mesh(foreArmGeo, bodyMat);
-  foreArmL.position.y = -0.35;
+  foreArmL.position.y = -(foreLen * 0.5 + 0.05);
   foreArmL.castShadow = true;
   elbowL.add(foreArmL);
-
   const foreArmR = foreArmL.clone();
   elbowR.add(foreArmR);
 
-  const handGeo = new THREE.SphereGeometry(0.165, 24, 20);
+  const handLGroup = new THREE.Group();
+  const handRGroup = new THREE.Group();
+  handLGroup.position.y = -(foreLen + 0.11);
+  handRGroup.position.y = -(foreLen + 0.11);
+  elbowL.add(handLGroup);
+  elbowR.add(handRGroup);
+
+  const handGeo = new THREE.SphereGeometry(0.16, 24, 20);
   const handL = new THREE.Mesh(handGeo, bodyMat);
   handL.scale.set(1.02, 0.9, 1.08);
-  handL.position.y = -0.72;
   handL.castShadow = true;
-  elbowL.add(handL);
-
+  handLGroup.add(handL);
   const handR = handL.clone();
-  elbowR.add(handR);
+  handRGroup.add(handR);
 
-  const hipL = new THREE.Group();
-  const hipR = new THREE.Group();
-  hipL.position.set(-0.35, 0.02, 0);
-  hipR.position.set(0.35, 0.02, 0);
-  pelvis.add(hipL, hipR);
+  // 形体改动：腿改为单段椭球（无大腿/小腿两段）
+  const legL = new THREE.Group();
+  const legR = new THREE.Group();
+  legL.position.set(-0.28, 0.06, 0.02);
+  legR.position.set(0.28, 0.06, 0.02);
+  pelvis.add(legL, legR);
 
-  const thighGeo = new THREE.CapsuleGeometry(0.185, 0.26, 8, 14);
-  const shinGeo = new THREE.CapsuleGeometry(0.168, 0.24, 8, 14);
+  const legGeo = new THREE.CapsuleGeometry(0.195, 0.2, 8, 14);
+  const legMeshL = new THREE.Mesh(legGeo, bodyMat);
+  legMeshL.scale.set(1.08, 1.0, 1.0);
+  legMeshL.position.y = -0.29;
+  legMeshL.castShadow = true;
+  legL.add(legMeshL);
 
-  const thighL = new THREE.Mesh(thighGeo, bodyMat);
-  thighL.position.y = -0.25;
-  thighL.castShadow = true;
-  hipL.add(thighL);
+  const legMeshR = legMeshL.clone();
+  legR.add(legMeshR);
 
-  const thighR = thighL.clone();
-  hipR.add(thighR);
-
-  const kneeL = new THREE.Group();
-  const kneeR = new THREE.Group();
-  kneeL.position.y = -0.52;
-  kneeR.position.y = -0.52;
-  hipL.add(kneeL);
-  hipR.add(kneeR);
-
-  const shinL = new THREE.Mesh(shinGeo, bodyMat);
-  shinL.position.y = -0.22;
-  shinL.castShadow = true;
-  kneeL.add(shinL);
-
-  const shinR = shinL.clone();
-  kneeR.add(shinR);
-
-  const footGeo = new THREE.SphereGeometry(0.21, 26, 18);
+  const footGeo = new THREE.SphereGeometry(0.2, 24, 18);
   const footL = new THREE.Mesh(footGeo, bodyMat);
-  footL.scale.set(1.42, 0.58, 1.62);
-  footL.position.set(0, -0.45, 0.12);
+  footL.scale.set(1.35, 0.52, 1.55);
+  footL.position.set(0, -0.54, 0.12);
   footL.castShadow = true;
-  footL.rotation.y = 0.05;
-  kneeL.add(footL);
+  legL.add(footL);
 
   const footR = footL.clone();
-  footR.rotation.y = -0.05;
-  kneeR.add(footR);
+  legR.add(footR);
 
   const heart = createHeartMesh();
   heart.visible = false;
-  heart.position.set(0, 1.28, 0.95);
+  heart.position.set(0, 1.27, 0.95);
   pelvis.add(heart);
+
+  // 新增动作：送花（flowerGroup 创建并绑定到右手）
+  const flowerGroup = createFlowerGroup();
+  flowerGroup.position.set(0.06, -0.01, 0.17);
+  flowerGroup.visible = false;
+  handRGroup.add(flowerGroup);
 
   return {
     root,
     pelvis,
     bodyGroup,
-    headPivot,
+    headGroup,
     shoulderL,
     shoulderR,
     elbowL,
     elbowR,
-    hipL,
-    hipR,
-    kneeL,
-    kneeR,
+    legL,
+    legR,
     heart,
     badge,
+    flowerGroup,
     eyeMat,
     materials: { bodyMat, badgeMat }
   };
@@ -317,17 +320,33 @@ function createHeartMesh() {
   shape.bezierCurveTo(0, -0.27, 0.25, -0.18, 0.25, 0.02);
   shape.bezierCurveTo(0.25, 0.22, 0, 0.18, 0, 0);
   const geo = new THREE.ShapeGeometry(shape);
-  const mat = new THREE.MeshStandardMaterial({
-    color: '#ff6fa8',
-    emissive: '#ff4f96',
-    emissiveIntensity: 0.62,
-    transparent: true,
-    opacity: 0.9,
-    side: THREE.DoubleSide
-  });
+  const mat = new THREE.MeshStandardMaterial({ color: '#ff6fa8', emissive: '#ff4f96', emissiveIntensity: 0.62, transparent: true, opacity: 0.92, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.scale.setScalar(0.4);
+  mesh.scale.setScalar(0.45);
   return mesh;
+}
+
+function createFlowerGroup() {
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.01, 0.012, 0.22, 10),
+    new THREE.MeshStandardMaterial({ color: '#3aa35a', roughness: 0.6, metalness: 0 })
+  );
+  stem.position.y = 0.1;
+  g.add(stem);
+
+  const petalMat = new THREE.MeshStandardMaterial({ color: '#dd1f33', roughness: 0.45, metalness: 0.02 });
+  const center = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 14), petalMat);
+  center.position.y = 0.24;
+  g.add(center);
+
+  for (let i = 0; i < 5; i++) {
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), petalMat);
+    const a = (i / 5) * Math.PI * 2;
+    petal.position.set(Math.cos(a) * 0.045, 0.24 + Math.sin(a) * 0.01, Math.sin(a) * 0.045);
+    g.add(petal);
+  }
+  return g;
 }
 
 function applyParams(syncUI = true) {
@@ -345,178 +364,213 @@ function applyParams(syncUI = true) {
   }
 }
 
-function setAction(action) {
-  if (state.targetAction === action) return;
-  state.targetAction = action;
-  state.phase = 'toNeutral';
+function setAction(name) {
+  // 修复动作不生效根因：显式切换 currentAction + 过渡状态，不再让 idle 每帧覆盖手臂姿势
+  if (state.currentAction === name) return;
+  console.log('[action] set:', name);
+  state.fromAction = state.currentAction;
+  state.fromActionStartAt = state.actionStartAt;
+  state.currentAction = name;
+  state.actionStartAt = state.elapsed;
+  state.transition = 0;
 }
 
-function damp(current, target, speed, dt) {
-  return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-speed * dt));
-}
+function getActionPose(action, t) {
+  const p = clonePose(poseNeutral);
 
-function makePose() {
-  return JSON.parse(JSON.stringify(neutralPose));
-}
-
-function applyActionPose(pose, action, t) {
   if (action === 'wave') {
-    pose.shoulderR.x = -1.15;
-    pose.shoulderR.z = -0.34;
-    pose.shoulderR.y = 0.26;
-    pose.elbowR.x = 0.9;
-    pose.shoulderL.z = 0.3;
-    pose.head.y = Math.sin(t * 2.5) * 0.08;
+    p.shoulderR.x = -1.18;
+    p.shoulderR.y = 0.36;
+    p.shoulderR.z = -0.38;
+    p.elbowR.x = 0.86;
+    p.elbowR.y = Math.sin(t * 6.5) * 0.12;
+    p.head.y = Math.sin(t * 2.2) * 0.09;
   }
 
   if (action === 'heart') {
-    pose.shoulderL.x = -0.78;
-    pose.shoulderR.x = -0.78;
-    pose.shoulderL.y = -0.14;
-    pose.shoulderR.y = 0.14;
-    pose.shoulderL.z = 0.34;
-    pose.shoulderR.z = -0.34;
-    pose.elbowL.x = 1.28;
-    pose.elbowR.x = 1.28;
-    pose.body.x = 0.04;
+    p.shoulderL.x = -0.82;
+    p.shoulderR.x = -0.82;
+    p.shoulderL.y = -0.2;
+    p.shoulderR.y = 0.2;
+    p.shoulderL.z = 0.34;
+    p.shoulderR.z = -0.34;
+    p.elbowL.x = 1.3;
+    p.elbowR.x = 1.3;
+    p.body.x = 0.05;
+    p.showHeart = true;
   }
 
   if (action === 'dance') {
-    pose.body.z = Math.sin(t * 2.2) * 0.22;
-    pose.head.y = Math.sin(t * 2.2) * 0.24;
-    pose.shoulderL.z = 0.34 + Math.sin(t * 4.3) * 0.36;
-    pose.shoulderR.z = -0.34 - Math.sin(t * 4.3 + 0.8) * 0.36;
-    pose.hipL.x = 0.06 + Math.sin(t * 3.2) * 0.18;
-    pose.hipR.x = 0.06 + Math.sin(t * 3.2 + Math.PI) * 0.18;
-    pose.rootY = Math.abs(Math.sin(t * 3.2)) * 0.05;
+    p.body.z = Math.sin(t * 2.2) * 0.24;
+    p.head.y = Math.sin(t * 2.2) * 0.3;
+    p.shoulderL.z = 0.25 + Math.sin(t * 4.2) * 0.6;
+    p.shoulderR.z = -0.25 - Math.sin(t * 4.2 + 0.8) * 0.6;
+    p.legL.x = 0.04 + Math.sin(t * 3.2) * 0.22;
+    p.legR.x = 0.04 + Math.sin(t * 3.2 + Math.PI) * 0.22;
+    p.rootY = Math.abs(Math.sin(t * 3.1)) * 0.06;
   }
 
   if (action === 'spin') {
-    pose.rootYaw = (t * 0.85) % (Math.PI * 2);
-    pose.head.y = Math.sin(t * 1.1) * 0.14;
+    p.rootYaw = (t / 7) * Math.PI * 2;
+    p.head.y = Math.sin(t * 1.2) * 0.14;
   }
 
   if (action === 'hug') {
-    pose.shoulderL.x = -0.72;
-    pose.shoulderR.x = -0.72;
-    pose.shoulderL.z = 0.28;
-    pose.shoulderR.z = -0.28;
-    pose.shoulderL.y = -0.18;
-    pose.shoulderR.y = 0.18;
-    pose.elbowL.x = 1.18;
-    pose.elbowR.x = 1.18;
-    pose.body.x = 0.13;
-    pose.head.x = -0.07;
+    p.shoulderL.x = -0.72;
+    p.shoulderR.x = -0.72;
+    p.shoulderL.y = -0.24;
+    p.shoulderR.y = 0.24;
+    p.shoulderL.z = 0.3;
+    p.shoulderR.z = -0.3;
+    p.elbowL.x = 1.22;
+    p.elbowR.x = 1.22;
+    p.body.x = 0.12;
+    p.head.x = -0.08;
   }
 
   if (action === 'comfort') {
-    pose.head.x = Math.sin(t * 3) * 0.16;
-    pose.shoulderR.x = -0.6;
-    pose.elbowR.x = 0.84 + Math.sin(t * 3) * 0.2;
-    pose.shoulderL.z = 0.27;
-    pose.body.z = Math.sin(t * 3) * 0.05;
+    p.head.x = Math.sin(t * 2.8) * 0.22;
+    p.shoulderR.x = -0.56;
+    p.shoulderR.y = 0.2;
+    p.elbowR.x = 0.86 + Math.sin(t * 2.8) * 0.16;
+    p.body.z = Math.sin(t * 2.8) * 0.05;
   }
 
-  return pose;
+  if (action === 'flower') {
+    const enter = clamp(t / 0.8, 0, 1);
+    const holdBreath = 1 + Math.sin(Math.max(0, t - 0.8) * 2.2) * 0.04;
+    p.shoulderR.x = mix(p.shoulderR.x, -0.94, enter);
+    p.shoulderR.y = mix(p.shoulderR.y, 0.26, enter);
+    p.shoulderR.z = mix(p.shoulderR.z, -0.3, enter);
+    p.elbowR.x = mix(p.elbowR.x, 1.18, enter);
+    p.shoulderL.z = 0.2;
+    p.body.x = mix(0, 0.14, enter);
+    p.head.x = mix(0, -0.05, enter);
+    p.rootY = (holdBreath - 1) * 0.05;
+    p.showFlower = true;
+  }
+
+  return p;
 }
 
-function getLimbSamples(side, shoulderRot, elbowRot) {
-  const meta = armMeta[side];
-  const shoulder = meta.shoulderPos.clone();
-  const upperLen = 0.78;
-  const foreLen = 0.72;
+function lerpPose(a, b, t) {
+  const p = clonePose(a);
+  const keys = ['x', 'y', 'z'];
+  ['body', 'head', 'shoulderL', 'shoulderR', 'legL', 'legR'].forEach((k) => {
+    keys.forEach((ax) => {
+      p[k][ax] = mix(a[k][ax], b[k][ax], t);
+    });
+  });
+  ['elbowL', 'elbowR'].forEach((k) => {
+    p[k].x = mix(a[k].x, b[k].x, t);
+  });
+  p.rootY = mix(a.rootY, b.rootY, t);
+  p.rootYaw = mix(a.rootYaw, b.rootYaw, t);
+  p.showHeart = t < 0.5 ? a.showHeart : b.showHeart;
+  p.showFlower = t < 0.5 ? a.showFlower : b.showFlower;
+  return p;
+}
+
+function getLimbSamples(side, shoulderRot, elbowX) {
+  const shoulder = armMeta[side].shoulderPos.clone();
+  const upperLen = 0.9;
+  const foreLen = 0.86;
 
   const upperDir = new THREE.Vector3(0, -1, 0).applyEuler(new THREE.Euler(shoulderRot.x, shoulderRot.y, shoulderRot.z, 'XYZ'));
-  const elbowPos = shoulder.clone().addScaledVector(upperDir, upperLen);
-  const foreDir = new THREE.Vector3(0, -1, 0).applyEuler(
-    new THREE.Euler(shoulderRot.x + elbowRot.x * 0.88, shoulderRot.y, shoulderRot.z, 'XYZ')
-  );
-
-  const wristPos = elbowPos.clone().addScaledVector(foreDir, foreLen);
+  const elbow = shoulder.clone().addScaledVector(upperDir, upperLen);
+  const foreDir = new THREE.Vector3(0, -1, 0).applyEuler(new THREE.Euler(shoulderRot.x + elbowX * 0.88, shoulderRot.y, shoulderRot.z, 'XYZ'));
+  const wrist = elbow.clone().addScaledVector(foreDir, foreLen);
 
   return [
-    shoulder.clone().lerp(elbowPos, 0.3),
-    shoulder.clone().lerp(elbowPos, 0.7),
-    elbowPos.clone().lerp(wristPos, 0.33),
-    elbowPos.clone().lerp(wristPos, 0.66),
-    wristPos
+    shoulder.clone().lerp(elbow, 0.3),
+    shoulder.clone().lerp(elbow, 0.7),
+    elbow.clone().lerp(wrist, 0.35),
+    elbow.clone().lerp(wrist, 0.7),
+    wrist
   ];
 }
 
-function isInsideTorso(point) {
-  const d = point.clone().sub(torsoCollider.center);
+function isInsideTorso(p) {
+  const d = p.clone().sub(torsoCollider.center);
   const q = (d.x * d.x) / (torsoCollider.radii.x * torsoCollider.radii.x)
-          + (d.y * d.y) / (torsoCollider.radii.y * torsoCollider.radii.y)
-          + (d.z * d.z) / (torsoCollider.radii.z * torsoCollider.radii.z);
+    + (d.y * d.y) / (torsoCollider.radii.y * torsoCollider.radii.y)
+    + (d.z * d.z) / (torsoCollider.radii.z * torsoCollider.radii.z);
   return q < 1;
 }
 
-// 2) 关节约束 clamp：肩/肘角度范围与内收限制，避免反折和向体内卷入
-function applyArmConstraints(side, pose) {
+function applyArmConstraints(side, pose, actionName) {
   const shoulder = side === 'L' ? pose.shoulderL : pose.shoulderR;
   const elbow = side === 'L' ? pose.elbowL : pose.elbowR;
-  const meta = armMeta[side];
+  const m = armMeta[side];
 
-  shoulder.x = clampAngle(shoulder.x, -1.35, 0.9);
-  shoulder.y = clampAngle(shoulder.y, meta.yawMin, meta.yawMax);
-  shoulder.z = side === 'L' ? clampAngle(shoulder.z, meta.outMin, 1.25) : clampAngle(shoulder.z, -1.25, meta.outMin);
-  elbow.x = clampAngle(elbow.x, 0, 2.05);
+  // 关节约束 clamp：限制肩关节内收与肘部折叠范围
+  shoulder.x = clamp(shoulder.x, m.pitch[0], m.pitch[1]);
+  shoulder.y = clamp(shoulder.y, m.yaw[0], m.yaw[1]);
+  shoulder.z = clamp(shoulder.z, m.roll[0], m.roll[1]);
+  elbow.x = clamp(elbow.x, 0, 2.08);
 
-  // 3) 简易碰撞（椭球检测 + push-out）：采样手臂点进入躯干则向外推回
+  const allowsForward = actionName === 'flower' || actionName === 'heart' || actionName === 'hug';
+
+  // 简易碰撞：椭球检测 + push-out，优先外展与前伸，避免把动作完全弹回 neutral
   for (let i = 0; i < 4; i++) {
-    const samples = getLimbSamples(side, shoulder, elbow);
-    const hit = samples.some(isInsideTorso);
+    const hit = getLimbSamples(side, shoulder, elbow.x).some(isInsideTorso);
     if (!hit) break;
 
     if (side === 'L') {
-      shoulder.y -= 0.08;
-      shoulder.z += 0.05;
+      shoulder.y -= 0.09;
+      shoulder.z += 0.06;
     } else {
-      shoulder.y += 0.08;
-      shoulder.z -= 0.05;
+      shoulder.y += 0.09;
+      shoulder.z -= 0.06;
     }
-    shoulder.x += 0.04;
 
-    shoulder.x = clampAngle(shoulder.x, -1.35, 0.9);
-    shoulder.y = clampAngle(shoulder.y, meta.yawMin, meta.yawMax);
-    shoulder.z = side === 'L' ? clampAngle(shoulder.z, meta.outMin, 1.25) : clampAngle(shoulder.z, -1.25, meta.outMin);
+    shoulder.x += allowsForward ? 0.02 : 0.05;
+
+    shoulder.x = clamp(shoulder.x, m.pitch[0], m.pitch[1]);
+    shoulder.y = clamp(shoulder.y, m.yaw[0], m.yaw[1]);
+    shoulder.z = clamp(shoulder.z, m.roll[0], m.roll[1]);
   }
 }
 
 function applyPose(pose, dt) {
-  applyArmConstraints('L', pose);
-  applyArmConstraints('R', pose);
+  applyArmConstraints('L', pose, state.currentAction);
+  applyArmConstraints('R', pose, state.currentAction);
 
-  baymax.shoulderL.rotation.x = damp(baymax.shoulderL.rotation.x, pose.shoulderL.x, 10, dt);
-  baymax.shoulderL.rotation.y = damp(baymax.shoulderL.rotation.y, pose.shoulderL.y, 10, dt);
-  baymax.shoulderL.rotation.z = damp(baymax.shoulderL.rotation.z, pose.shoulderL.z, 10, dt);
+  const s = 1 - Math.exp(-dt * 10);
+  const dampRot = (group, target) => {
+    group.rotation.x += (target.x - group.rotation.x) * s;
+    group.rotation.y += (target.y - group.rotation.y) * s;
+    group.rotation.z += (target.z - group.rotation.z) * s;
+  };
 
-  baymax.shoulderR.rotation.x = damp(baymax.shoulderR.rotation.x, pose.shoulderR.x, 10, dt);
-  baymax.shoulderR.rotation.y = damp(baymax.shoulderR.rotation.y, pose.shoulderR.y, 10, dt);
-  baymax.shoulderR.rotation.z = damp(baymax.shoulderR.rotation.z, pose.shoulderR.z, 10, dt);
+  dampRot(baymax.bodyGroup, pose.body);
+  dampRot(baymax.headGroup, pose.head);
+  dampRot(baymax.shoulderL, pose.shoulderL);
+  dampRot(baymax.shoulderR, pose.shoulderR);
+  baymax.elbowL.rotation.x += (pose.elbowL.x - baymax.elbowL.rotation.x) * s;
+  baymax.elbowR.rotation.x += (pose.elbowR.x - baymax.elbowR.rotation.x) * s;
+  dampRot(baymax.legL, pose.legL);
+  dampRot(baymax.legR, pose.legR);
 
-  baymax.elbowL.rotation.x = damp(baymax.elbowL.rotation.x, pose.elbowL.x, 12, dt);
-  baymax.elbowR.rotation.x = damp(baymax.elbowR.rotation.x, pose.elbowR.x, 12, dt);
+  baymax.root.position.y += (pose.rootY - baymax.root.position.y) * s;
+  state.rootYaw += (pose.rootYaw - state.rootYaw) * s;
+  baymax.root.rotation.y = state.rootYaw;
 
-  baymax.hipL.rotation.x = damp(baymax.hipL.rotation.x, pose.hipL.x, 8, dt);
-  baymax.hipR.rotation.x = damp(baymax.hipR.rotation.x, pose.hipR.x, 8, dt);
-  baymax.hipL.rotation.z = damp(baymax.hipL.rotation.z, pose.hipL.z, 8, dt);
-  baymax.hipR.rotation.z = damp(baymax.hipR.rotation.z, pose.hipR.z, 8, dt);
+  baymax.heart.visible = pose.showHeart;
+  baymax.flowerGroup.visible = pose.showFlower;
+}
 
-  baymax.kneeL.rotation.x = damp(baymax.kneeL.rotation.x, pose.kneeL.x, 8, dt);
-  baymax.kneeR.rotation.x = damp(baymax.kneeR.rotation.x, pose.kneeR.x, 8, dt);
+function updateActionBlender(dt) {
+  const tCurrent = Math.max(0, state.elapsed - state.actionStartAt);
+  const tFrom = Math.max(0, state.elapsed - state.fromActionStartAt);
+  const currentTarget = getActionPose(state.currentAction, tCurrent);
+  const fromTarget = getActionPose(state.fromAction, tFrom);
 
-  baymax.bodyGroup.rotation.x = damp(baymax.bodyGroup.rotation.x, pose.body.x, 7, dt);
-  baymax.bodyGroup.rotation.y = damp(baymax.bodyGroup.rotation.y, pose.body.y, 7, dt);
-  baymax.bodyGroup.rotation.z = damp(baymax.bodyGroup.rotation.z, pose.body.z, 7, dt);
-
-  baymax.headPivot.rotation.x = damp(baymax.headPivot.rotation.x, pose.head.x, 7, dt);
-  baymax.headPivot.rotation.y = damp(baymax.headPivot.rotation.y, pose.head.y, 7, dt);
-  baymax.headPivot.rotation.z = damp(baymax.headPivot.rotation.z, pose.head.z, 7, dt);
-
-  baymax.root.position.y = damp(baymax.root.position.y, pose.rootY, 8, dt);
-  state.bodyTurn = damp(state.bodyTurn, pose.rootYaw, 7, dt);
-  baymax.root.rotation.y = state.bodyTurn;
+  if (state.transition < 1) {
+    state.transition = Math.min(1, state.transition + dt / state.transitionDuration);
+  }
+  const alpha = smoothstep01(state.transition);
+  return lerpPose(fromTarget, currentTarget, alpha);
 }
 
 function animateLoop() {
@@ -526,44 +580,27 @@ function animateLoop() {
 
   controls.update();
 
-  let pose = makePose();
+  let pose = updateActionBlender(dt);
 
-  pose.rootY += Math.sin(t * 2.1) * 0.015;
-  pose.body.z += Math.sin(t * 1.4) * 0.035;
-  pose.head.y += Math.sin(t * 0.9) * 0.08;
+  // idle 只保留身体呼吸微动，不再覆盖动作手臂（动作生效修复点）
+  pose.rootY += Math.sin(t * 2.1) * 0.013;
+  pose.body.z += Math.sin(t * 1.3) * 0.03;
+  if (state.currentAction === 'idle') {
+    pose.head.y += Math.sin(t * 0.9) * 0.06;
+  }
 
   if (Math.sin(t * 2.9) > 0.992) state.blink = 0.2;
-  state.blink = damp(state.blink, 1, 14, dt);
-  const eyeScale = THREE.MathUtils.clamp(state.blink, 0.2, 1);
-  baymax.headPivot.children.forEach((obj) => {
+  state.blink += (1 - state.blink) * (1 - Math.exp(-dt * 14));
+  const eyeScale = clamp(state.blink, 0.2, 1);
+  baymax.headGroup.children.forEach((obj) => {
     if (obj.geometry && obj.geometry.type === 'SphereGeometry' && obj.material === baymax.eyeMat) {
       obj.scale.y = eyeScale;
     }
   });
 
-  if (state.phase === 'toNeutral') {
-    const totalDelta =
-      Math.abs(baymax.shoulderL.rotation.z - neutralPose.shoulderL.z)
-      + Math.abs(baymax.shoulderR.rotation.z - neutralPose.shoulderR.z)
-      + Math.abs(baymax.elbowL.rotation.x - neutralPose.elbowL.x)
-      + Math.abs(baymax.elbowR.rotation.x - neutralPose.elbowR.x)
-      + Math.abs(baymax.bodyGroup.rotation.x)
-      + Math.abs(baymax.bodyGroup.rotation.z)
-      + Math.abs(baymax.root.rotation.y);
-
-    if (totalDelta < 0.05) {
-      state.currentAction = state.targetAction;
-      state.phase = 'action';
-    }
-  } else {
-    pose = applyActionPose(pose, state.currentAction, t);
-  }
-
-  baymax.heart.visible = false;
-  if (state.currentAction === 'heart' && state.phase === 'action') {
-    baymax.heart.visible = true;
-    const pulse = 1 + Math.sin(t * 6) * 0.12;
-    baymax.heart.scale.setScalar(0.4 * pulse);
+  if (pose.showHeart) {
+    const pulse = 1 + Math.sin(t * 6) * 0.14;
+    baymax.heart.scale.setScalar(0.45 * pulse);
     baymax.heart.material.opacity = 0.66 + 0.26 * (Math.sin(t * 6) * 0.5 + 0.5);
   }
 
@@ -629,7 +666,7 @@ function bindUI() {
   });
 
   ui.resetView.addEventListener('click', () => {
-    camera.position.set(0, 1.9, 4.6);
+    camera.position.set(0, 1.95, 4.7);
     controls.target.set(0, 1.25, 0);
     controls.update();
   });
