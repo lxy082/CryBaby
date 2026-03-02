@@ -1,7 +1,6 @@
 console.log('[boot] main.js loaded');
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-
 console.log('[boot] THREE version:', THREE.REVISION);
 
 const PRESETS = [
@@ -42,27 +41,32 @@ const state = {
 const poseNeutral = {
   body: { x: 0, y: 0, z: 0 },
   head: { x: 0, y: 0, z: 0 },
-  shoulderL: { x: 0.08, y: -0.06, z: 0.16 },
-  shoulderR: { x: 0.08, y: 0.06, z: -0.16 },
-  elbowL: { x: 0.14 },
-  elbowR: { x: 0.14 },
-  legL: { x: 0.02, y: 0, z: 0.03 },
-  legR: { x: 0.02, y: 0, z: -0.03 },
+  shoulderL: { x: 0.18, y: -0.1, z: 0.34 },
+  shoulderR: { x: 0.18, y: 0.1, z: -0.34 },
+  elbowL: { x: 0.12 },
+  elbowR: { x: 0.12 },
+  legL: { x: 0.02, y: 0, z: 0.02 },
+  legR: { x: 0.02, y: 0, z: -0.02 },
   rootY: 0,
   rootYaw: 0,
   showHeart: false,
   showFlower: false
 };
 
-const armMeta = {
-  L: { shoulderPos: new THREE.Vector3(-0.76, 1.54, 0.06), yaw: [-0.9, 0.35], roll: [0.02, 1.05], pitch: [-1.38, 0.95] },
-  R: { shoulderPos: new THREE.Vector3(0.76, 1.54, 0.06), yaw: [-0.35, 0.9], roll: [-1.05, -0.02], pitch: [-1.38, 0.95] }
+const armLimits = {
+  L: { pitch: [-1.35, 1.02], yaw: [-1.05, 0.36], roll: [0.03, 1.22] },
+  R: { pitch: [-1.35, 1.02], yaw: [-0.36, 1.05], roll: [-1.22, -0.03] }
 };
 
-// 3) 碰撞约束升级：椭球检测 + 迭代 push-out 的实现（与躯干尺寸对齐）
 const torsoCollider = {
-  center: new THREE.Vector3(0, 1.34, 0.03),
-  radii: new THREE.Vector3(0.92, 1.12, 0.82)
+  center: new THREE.Vector3(0, 1.35, 0.04),
+  radii: new THREE.Vector3(0.92, 1.13, 0.82)
+};
+
+const armSampleLocal = {
+  upper: [new THREE.Vector3(0, -0.2, 0), new THREE.Vector3(0, -0.48, 0.03), new THREE.Vector3(0, -0.76, -0.03)],
+  fore: [new THREE.Vector3(0, -0.2, 0), new THREE.Vector3(0, -0.52, 0.02), new THREE.Vector3(0, -0.85, -0.02)],
+  hand: [new THREE.Vector3(0, -0.02, 0.07), new THREE.Vector3(0, -0.02, -0.07)]
 };
 
 let scene;
@@ -91,9 +95,9 @@ function smoothstep01(t) {
 function makeBodyMaterial(color) {
   return new THREE.MeshPhysicalMaterial({
     color,
-    roughness: 0.67,
+    roughness: 0.66,
     metalness: 0,
-    clearcoat: 0.4,
+    clearcoat: 0.38,
     clearcoatRoughness: 0.62
   });
 }
@@ -113,14 +117,14 @@ function initScene() {
 
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
-  camera.position.set(0, 1.95, 4.8);
-  camera.lookAt(0, 1.3, 0);
+  camera.position.set(0, 1.96, 4.82);
+  camera.lookAt(0, 1.32, 0);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.target.set(0, 1.28, 0);
   controls.minDistance = 2.2;
-  controls.maxDistance = 7.6;
+  controls.maxDistance = 7.8;
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x95a7b8, 0.9));
 
@@ -188,12 +192,12 @@ function createBaymax() {
   badge.visible = state.params.showBadge;
   bodyGroup.add(badge);
 
-  // 1) head/legs 修正：头上移+前移，并增加肩颈过渡件（collar）避免深埋
-  const collar = new THREE.Mesh(new THREE.SphereGeometry(0.34, 32, 24), bodyMat);
-  collar.scale.set(1.7, 0.34, 1.25);
-  collar.position.set(0, 1.24, 0.04);
-  collar.castShadow = true;
-  bodyGroup.add(collar);
+  // 1) 删除头顶圆盘：这里不再创建任何 “head disk/hat brim” 几何，只保留头部本体与脸
+  const neckPad = new THREE.Mesh(new THREE.SphereGeometry(0.26, 28, 22), bodyMat);
+  neckPad.scale.set(1.35, 0.42, 1.1);
+  neckPad.position.set(0, 1.26, 0.05);
+  neckPad.castShadow = true;
+  bodyGroup.add(neckPad);
 
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 1.68, 0.13);
@@ -204,7 +208,6 @@ function createBaymax() {
   head.castShadow = true;
   headGroup.add(head);
 
-  // 眼睛与眼线：黑点+细线，前置并抬高，防 z-fighting
   const eyeY = 0.032;
   const eyeZ = 0.338;
   const eyeGap = 0.113;
@@ -217,31 +220,32 @@ function createBaymax() {
   eyeLine.position.set(0, eyeY, eyeZ + 0.004);
   headGroup.add(eyeL, eyeR, eyeLine);
 
-  // 2) arms 重做：扁截面手臂 + shoulderPad + 肩枢轴位置逻辑（贴身体侧并有软胶过渡）
+  // 2) 手臂几何体从圆截面改为扁截面 + shoulderPad，肩枢轴在躯干边界内侧
   const shoulderL = new THREE.Group();
   const shoulderR = new THREE.Group();
-  shoulderL.position.copy(armMeta.L.shoulderPos);
-  shoulderR.position.copy(armMeta.R.shoulderPos);
+  shoulderL.position.set(-0.74, 1.54, 0.06);
+  shoulderR.position.set(0.74, 1.54, 0.06);
   pelvis.add(shoulderL, shoulderR);
 
-  const shoulderPadGeo = new THREE.SphereGeometry(0.23, 22, 18);
+  const shoulderPadGeo = new THREE.SphereGeometry(0.22, 22, 18);
   const shoulderPadL = new THREE.Mesh(shoulderPadGeo, bodyMat);
-  shoulderPadL.scale.set(1.28, 0.95, 1.15);
-  shoulderPadL.position.set(-0.06, 0.01, 0.02);
+  shoulderPadL.scale.set(1.35, 0.92, 1.15);
+  shoulderPadL.position.set(-0.04, 0.01, 0.03);
   shoulderPadL.castShadow = true;
   shoulderL.add(shoulderPadL);
 
   const shoulderPadR = shoulderPadL.clone();
-  shoulderPadR.position.x = 0.06;
+  shoulderPadR.position.x = 0.04;
   shoulderR.add(shoulderPadR);
 
   const upperLen = 0.95;
   const foreLen = 0.9;
-  const upperArmGeo = new THREE.CapsuleGeometry(0.106, upperLen, 9, 18);
-  const foreArmGeo = new THREE.CapsuleGeometry(0.098, foreLen, 9, 18);
+
+  const upperArmGeo = new THREE.CapsuleGeometry(0.108, upperLen, 9, 18);
+  const foreArmGeo = new THREE.CapsuleGeometry(0.1, foreLen, 9, 18);
 
   const upperArmL = new THREE.Mesh(upperArmGeo, bodyMat);
-  upperArmL.scale.set(0.84, 1.0, 1.18);
+  upperArmL.scale.set(0.78, 1.0, 1.2); // x 更扁，z 略厚
   upperArmL.position.y = -(upperLen * 0.5 + 0.11);
   upperArmL.castShadow = true;
   shoulderL.add(upperArmL);
@@ -257,7 +261,7 @@ function createBaymax() {
   shoulderR.add(elbowR);
 
   const foreArmL = new THREE.Mesh(foreArmGeo, bodyMat);
-  foreArmL.scale.set(0.86, 1.0, 1.16);
+  foreArmL.scale.set(0.82, 1.0, 1.16); // x 更扁，z 略厚
   foreArmL.position.y = -(foreLen * 0.5 + 0.08);
   foreArmL.castShadow = true;
   elbowL.add(foreArmL);
@@ -274,14 +278,13 @@ function createBaymax() {
 
   const handGeo = new THREE.SphereGeometry(0.155, 24, 20);
   const handL = new THREE.Mesh(handGeo, bodyMat);
-  handL.scale.set(0.98, 0.88, 1.16);
+  handL.scale.set(0.96, 0.86, 1.16);
   handL.castShadow = true;
   handLGroup.add(handL);
 
   const handR = handL.clone();
   handRGroup.add(handR);
 
-  // 1) head/legs 修正：短腿单段且下移，脚掌扁椭球露出地面上方
   const legL = new THREE.Group();
   const legR = new THREE.Group();
   legL.position.set(-0.26, -0.02, 0.02);
@@ -327,6 +330,10 @@ function createBaymax() {
     shoulderR,
     elbowL,
     elbowR,
+    armMeshes: {
+      L: { upper: upperArmL, fore: foreArmL, hand: handL },
+      R: { upper: upperArmR, fore: foreArmR, hand: handR }
+    },
     legL,
     legR,
     heart,
@@ -422,8 +429,8 @@ function getActionPose(action, t) {
     p.shoulderR.x = -0.86;
     p.shoulderL.y = -0.2;
     p.shoulderR.y = 0.2;
-    p.shoulderL.z = 0.28;
-    p.shoulderR.z = -0.28;
+    p.shoulderL.z = 0.24;
+    p.shoulderR.z = -0.24;
     p.elbowL.x = 1.34;
     p.elbowR.x = 1.34;
     p.body.x = 0.06;
@@ -433,8 +440,8 @@ function getActionPose(action, t) {
   if (action === 'dance') {
     p.body.z = Math.sin(t * 2.2) * 0.25;
     p.head.y = Math.sin(t * 2.2) * 0.32;
-    p.shoulderL.z = 0.2 + Math.sin(t * 4.2) * 0.65;
-    p.shoulderR.z = -0.2 - Math.sin(t * 4.2 + 0.8) * 0.65;
+    p.shoulderL.z = 0.18 + Math.sin(t * 4.2) * 0.55;
+    p.shoulderR.z = -0.18 - Math.sin(t * 4.2 + 0.8) * 0.55;
     p.legL.x = 0.02 + Math.sin(t * 3.2) * 0.24;
     p.legR.x = 0.02 + Math.sin(t * 3.2 + Math.PI) * 0.24;
     p.rootY = Math.abs(Math.sin(t * 3.1)) * 0.06;
@@ -450,8 +457,8 @@ function getActionPose(action, t) {
     p.shoulderR.x = -0.76;
     p.shoulderL.y = -0.24;
     p.shoulderR.y = 0.24;
-    p.shoulderL.z = 0.24;
-    p.shoulderR.z = -0.24;
+    p.shoulderL.z = 0.2;
+    p.shoulderR.z = -0.2;
     p.elbowL.x = 1.24;
     p.elbowR.x = 1.24;
     p.body.x = 0.13;
@@ -471,9 +478,9 @@ function getActionPose(action, t) {
     const holdBreath = 1 + Math.sin(Math.max(0, t - 0.8) * 2.2) * 0.04;
     p.shoulderR.x = mix(p.shoulderR.x, -0.98, enter);
     p.shoulderR.y = mix(p.shoulderR.y, 0.28, enter);
-    p.shoulderR.z = mix(p.shoulderR.z, -0.26, enter);
+    p.shoulderR.z = mix(p.shoulderR.z, -0.22, enter);
     p.elbowR.x = mix(p.elbowR.x, 1.2, enter);
-    p.shoulderL.z = 0.18;
+    p.shoulderL.z = 0.15;
     p.body.x = mix(0, 0.14, enter);
     p.head.x = mix(0, -0.05, enter);
     p.rootY = (holdBreath - 1) * 0.05;
@@ -501,73 +508,77 @@ function lerpPose(a, b, t) {
   return p;
 }
 
-function getLimbSamples(side, shoulderRot, elbowX) {
-  const shoulder = armMeta[side].shoulderPos.clone();
-  const upperLen = 1.0;
-  const foreLen = 0.96;
-
-  const upperDir = new THREE.Vector3(0, -1, 0).applyEuler(new THREE.Euler(shoulderRot.x, shoulderRot.y, shoulderRot.z, 'XYZ'));
-  const elbow = shoulder.clone().addScaledVector(upperDir, upperLen);
-  const foreDir = new THREE.Vector3(0, -1, 0).applyEuler(new THREE.Euler(shoulderRot.x + elbowX * 0.88, shoulderRot.y, shoulderRot.z, 'XYZ'));
-  const wrist = elbow.clone().addScaledVector(foreDir, foreLen);
-
-  const handTip = wrist.clone().addScaledVector(foreDir, 0.22);
-
-  return [
-    shoulder.clone().lerp(elbow, 0.3),
-    shoulder.clone().lerp(elbow, 0.7),
-    elbow.clone().lerp(wrist, 0.35),
-    elbow.clone().lerp(wrist, 0.7),
-    wrist,
-    handTip
-  ];
-}
-
-function isInsideTorso(p) {
-  const d = p.clone().sub(torsoCollider.center);
-  const q = (d.x * d.x) / (torsoCollider.radii.x * torsoCollider.radii.x)
+function ellipsoidValue(worldPoint) {
+  const d = worldPoint.clone().sub(torsoCollider.center);
+  return (d.x * d.x) / (torsoCollider.radii.x * torsoCollider.radii.x)
     + (d.y * d.y) / (torsoCollider.radii.y * torsoCollider.radii.y)
     + (d.z * d.z) / (torsoCollider.radii.z * torsoCollider.radii.z);
-  return q < 1;
 }
 
-// 3) 碰撞约束升级：椭球检测 + 迭代 push-out（上臂/前臂/手采样），防止动作中穿模
-function applyArmConstraints(side, pose, actionName) {
-  const shoulder = side === 'L' ? pose.shoulderL : pose.shoulderR;
-  const elbow = side === 'L' ? pose.elbowL : pose.elbowR;
-  const m = armMeta[side];
+function getArmWorldSamples(side) {
+  const arm = baymax.armMeshes[side];
+  const out = [];
+  armSampleLocal.upper.forEach((p) => out.push(arm.upper.localToWorld(p.clone())));
+  armSampleLocal.fore.forEach((p) => out.push(arm.fore.localToWorld(p.clone())));
+  armSampleLocal.hand.forEach((p) => out.push(arm.hand.localToWorld(p.clone())));
+  return out;
+}
 
-  shoulder.x = clamp(shoulder.x, m.pitch[0], m.pitch[1]);
-  shoulder.y = clamp(shoulder.y, m.yaw[0], m.yaw[1]);
-  shoulder.z = clamp(shoulder.z, m.roll[0], m.roll[1]);
-  elbow.x = clamp(elbow.x, 0, 2.08);
+function clampArmRotations(side) {
+  const shoulder = side === 'L' ? baymax.shoulderL : baymax.shoulderR;
+  const elbow = side === 'L' ? baymax.elbowL : baymax.elbowR;
+  const lim = armLimits[side];
+
+  shoulder.rotation.x = clamp(shoulder.rotation.x, lim.pitch[0], lim.pitch[1]);
+  shoulder.rotation.y = clamp(shoulder.rotation.y, lim.yaw[0], lim.yaw[1]);
+  shoulder.rotation.z = clamp(shoulder.rotation.z, lim.roll[0], lim.roll[1]);
+  elbow.rotation.x = clamp(elbow.rotation.x, 0, 2.27); // 0~130°
+}
+
+// 3) 硬性不重合约束：每帧最终姿态后进行椭球穿透检测并 push-out 解算
+function solveArmNoOverlap(side, actionName) {
+  const shoulder = side === 'L' ? baymax.shoulderL : baymax.shoulderR;
+  const elbow = side === 'L' ? baymax.elbowL : baymax.elbowR;
 
   const allowsForward = actionName === 'flower' || actionName === 'heart' || actionName === 'hug';
+  const outStep = 0.03;
+  const fwdStep = allowsForward ? 0.015 : 0.01;
+  const liftReduceStep = 0.02;
 
-  for (let i = 0; i < 6; i++) {
-    const hit = getLimbSamples(side, shoulder, elbow.x).some(isInsideTorso);
-    if (!hit) break;
+  for (let iter = 0; iter < 10; iter++) {
+    const samples = getArmWorldSamples(side);
+    let worst = 10;
+    let penetrated = false;
 
-    if (side === 'L') {
-      shoulder.y -= 0.085;
-      shoulder.z += 0.05;
-    } else {
-      shoulder.y += 0.085;
-      shoulder.z -= 0.05;
+    for (const p of samples) {
+      const q = ellipsoidValue(p);
+      worst = Math.min(worst, q);
+      if (q < 1) penetrated = true;
     }
 
-    shoulder.x += allowsForward ? 0.018 : 0.045;
+    if (!penetrated) break;
 
-    shoulder.x = clamp(shoulder.x, m.pitch[0], m.pitch[1]);
-    shoulder.y = clamp(shoulder.y, m.yaw[0], m.yaw[1]);
-    shoulder.z = clamp(shoulder.z, m.roll[0], m.roll[1]);
+    // push-out 优先级：外展 > 前伸 > 降低抬臂
+    if (side === 'L') {
+      shoulder.rotation.z += outStep;
+      shoulder.rotation.y -= outStep * 0.62;
+    } else {
+      shoulder.rotation.z -= outStep;
+      shoulder.rotation.y += outStep * 0.62;
+    }
+
+    shoulder.rotation.x += fwdStep;
+    if (worst < 0.9) {
+      shoulder.rotation.x += liftReduceStep;
+    }
+
+    if (elbow.rotation.x > 2.1) elbow.rotation.x -= 0.03;
+
+    clampArmRotations(side);
   }
 }
 
 function applyPose(pose, dt) {
-  applyArmConstraints('L', pose, state.currentAction);
-  applyArmConstraints('R', pose, state.currentAction);
-
   const s = 1 - Math.exp(-dt * 10);
   const dampRot = (group, target) => {
     group.rotation.x += (target.x - group.rotation.x) * s;
@@ -583,6 +594,13 @@ function applyPose(pose, dt) {
   baymax.elbowR.rotation.x += (pose.elbowR.x - baymax.elbowR.rotation.x) * s;
   dampRot(baymax.legL, pose.legL);
   dampRot(baymax.legR, pose.legR);
+
+  clampArmRotations('L');
+  clampArmRotations('R');
+
+  // 强约束作为动作系统最后一步，保证“任何时候手臂都不与身体大椭球重合”
+  solveArmNoOverlap('L', state.currentAction);
+  solveArmNoOverlap('R', state.currentAction);
 
   baymax.root.position.y += (pose.rootY - baymax.root.position.y) * s;
   state.rootYaw += (pose.rootYaw - state.rootYaw) * s;
@@ -696,7 +714,7 @@ function bindUI() {
   });
 
   ui.resetView.addEventListener('click', () => {
-    camera.position.set(0, 1.95, 4.8);
+    camera.position.set(0, 1.96, 4.82);
     controls.target.set(0, 1.28, 0);
     controls.update();
   });
